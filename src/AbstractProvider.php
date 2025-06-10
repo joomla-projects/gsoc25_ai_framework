@@ -35,8 +35,11 @@ abstract class AbstractProvider implements ProviderInterface
      *
      * @param   array|\ArrayAccess  $options  Provider options array.
      * @param   HttpFactory   $httpFactory  The http factory
+     * 
+     * @throws  \InvalidArgumentException  If options is not an array or does not implement ArrayAccess.
+     * @since  ___DEPLOY_VERSION___
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory)
+    public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
         // To do: Exception Handeling Code
         // Validate provider is suported
@@ -48,7 +51,7 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         $this->options = $options;
-        $this->httpFactory = $httpFactory;
+        $this->httpFactory = $httpFactory ?: new HttpFactory();
     }
 
     /**
