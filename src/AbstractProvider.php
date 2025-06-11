@@ -3,6 +3,8 @@
 /**
  * Part of the Joomla Framework AI Package
  *
+ * @copyright  ___Copyright___
+ * @license    GNU General Public License version 2 or later; see LICENSE
  */
 
 namespace Joomla\AI;
@@ -20,6 +22,7 @@ abstract class AbstractProvider implements ProviderInterface
      * The provider options.
      *
      * @var    array|\ArrayAccess
+     * @since  __DEPLOY_VERSION__
      */
     protected $options;
 
@@ -27,6 +30,7 @@ abstract class AbstractProvider implements ProviderInterface
      * The HTTP factory instance.
      *
      * @var    HttpFactory
+     * @since  __DEPLOY_VERSION__
      */
     protected $httpFactory;
 
@@ -39,7 +43,7 @@ abstract class AbstractProvider implements ProviderInterface
      * @throws  \InvalidArgumentException  If options is not an array or does not implement ArrayAccess.
      * @since  ___DEPLOY_VERSION___
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
     {
         // To do: Exception Handeling Code
         // Validate provider is suported
@@ -61,6 +65,7 @@ abstract class AbstractProvider implements ProviderInterface
      * @param   mixed   $default  The default value if the option is not set.
      * 
      * @return  mixed The option value.
+     * @since  ___DEPLOY_VERSION___
      */
     protected function getOption(string $key, $default = null)
     {
@@ -119,19 +124,25 @@ abstract class AbstractProvider implements ProviderInterface
      *
      * @return  boolean  True if successful
      * @throws  \Exception
+     * @since  ___DEPLOY_VERSION___
      */
     protected function validateResponse($response): bool
     {
-        if ($response->code !== 200) {
-            // To Do: Error Handling Code
+        if ($response->code < 200 || $response->code >= 300) {
             throw new \Exception('AI API Error: HTTP ' . $response->code . ' - ' . $response->body);
         }
-
+    
         return true;
     }
 
     /**
      * Parse JSON response safely
+     * 
+     * @param   string  $jsonString  The JSON string to parse
+     * 
+     * @return  array  The parsed JSON data
+     * @throws  \Exception  If JSON parsing fails
+     * @since  ___DEPLOY_VERSION___
      */
     protected function parseJsonResponse(string $jsonString): array
     {
@@ -143,5 +154,4 @@ abstract class AbstractProvider implements ProviderInterface
         
         return $decoded;
     }
-
 }

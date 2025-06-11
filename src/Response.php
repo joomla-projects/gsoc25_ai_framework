@@ -3,9 +3,9 @@
 /**
  * Part of the Joomla Framework AI Package
  *
- * @copyright  Copyright (C) 2005 - 2025 Open Source Matters, Inc. All rights reserved.
+ * @copyright  ___Copyright___
  * @license    GNU General Public License version 2 or later; see LICENSE
-*/
+ */
 
 namespace Joomla\AI;
 
@@ -70,7 +70,6 @@ class Response
      * Get the content of the response.
      *
      * @return  string  The content of the response.
-     *
      * @since  __DEPLOY_VERSION__
      */
     public function getContent(): string
@@ -82,7 +81,6 @@ class Response
      * Get the metadata of the response.
      *
      * @return  array  The metadata of the response.
-     *
      * @since  __DEPLOY_VERSION__
      */
     public function getMetadata(): array
@@ -94,7 +92,6 @@ class Response
      * Get the provider of the response.
      *
      * @return  string  The provider of the response.
-     *
      * @since  __DEPLOY_VERSION__
      */
     public function getProvider(): string
@@ -106,7 +103,6 @@ class Response
      * Get the status code of the response.
      *
      * @return  int  The status code of the response.
-     *
      * @since  __DEPLOY_VERSION__
      */
     public function getStatusCode(): int
@@ -120,7 +116,6 @@ class Response
      * @param   string  $name  The name of the property to get.
      *
      * @return  mixed  The value of the property.
-     *
      * @since  __DEPLOY_VERSION__
      */
     public function __get($name)
