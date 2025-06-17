@@ -76,7 +76,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function getAvailableModels(): array
     {
-        $response = $this->makeGetRequest('https://api.openai.com/v1/models');
+        $headers = $this->buildHeaders();
+        $response = $this->makeGetRequest('https://api.openai.com/v1/models', $headers);
+        $this->validateResponse($response);
         $data = $this->parseJsonResponse($response->body);
         
         return array_column($data['data'], 'id');
