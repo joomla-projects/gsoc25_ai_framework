@@ -3,13 +3,14 @@
 /**
  * Part of the Joomla Framework AI Package
  *
- * @copyright  ___Copyright___
+ * @copyright  (C) 2025 Open Source Matters, Inc. <https://www.joomla.org>
  * @license    GNU General Public License version 2 or later; see LICENSE
  */
 
 namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
+use Joomla\AI\Interface\ProviderInterface;
 
 /**
  * Abstract provider class.

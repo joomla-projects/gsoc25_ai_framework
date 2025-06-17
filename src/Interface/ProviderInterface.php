@@ -3,11 +3,13 @@
 /**
  * Part of the Joomla Framework AI Package
  *
- * @copyright  ___Copyright___
+ * @copyright  (C) 2025 Open Source Matters, Inc. <https://www.joomla.org>
  * @license    GNU General Public License version 2 or later; see LICENSE
  */
 
-namespace Joomla\AI;
+namespace Joomla\AI\Interface;
+
+use Joomla\AI\Response\Response;
 
 /**
  * AI provider class interface.
@@ -32,6 +34,7 @@ interface ProviderInterface
      */
     public function getName(): string;
 
+    // Should be a smart router in future versions.
     /**
      * Send a prompt to the AI provider and return a Response object with the response.
      * 
@@ -43,6 +46,7 @@ interface ProviderInterface
      */
     public function prompt(string $prompt, array $options = []): Response;
 
+    // Does the same as prompt. Need to be checked if removed, or kept for option parameter
     /**
      * Ask a question to the AI provider and return a Response object with the response.
      * 

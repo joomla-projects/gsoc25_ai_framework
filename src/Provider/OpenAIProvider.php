@@ -3,21 +3,22 @@
 /**
  * Part of the Joomla Framework AI Package
  *
- * @copyright  ___Copyright___
+ * @copyright  opyright (C) 2025 Open Source Matters, Inc. All rights reserved.
  * @license    GNU General Public License version 2 or later; see LICENSE
  */
 
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
-use Joomla\AI\Response;
+use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Response\Response;
 
 /**
  * OpenAI provider implementation for chat completions.
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider
+class OpenAIProvider extends AbstractProvider implements ChatInterface
 {
     /**
      * Default OpenAI API endpoint for chat completions
@@ -59,17 +60,17 @@ class OpenAIProvider extends AbstractProvider
     }
 
     /**
-     * Send a prompt to OpenAI and return response.
+     * Send a message to OpenAI and return response.
      *
-     * @param   string  $prompt   The prompt to send
+     * @param   string  $message   The message to send
      * @param   array   $options  Additional options for the request
      * 
      * @return  Response  The AI response object
      * @since  __DEPLOY_VERSION__
      */
-    public function prompt(string $prompt, array $options = []): Response
+    public function chat(string $message, array $options = []): Response
     {
-        $requestData = $this->buildRequestPayload($prompt, $options);
+        $requestData = $this->buildRequestPayload($message, $options);
         
         $endpoint = $this->getEndpoint();
         $headers = $this->buildHeaders();
@@ -86,7 +87,36 @@ class OpenAIProvider extends AbstractProvider
     }
 
     /**
-     * Ask method - alias for prompt for now
+     * Generate chat completion with vision capability and return Response.
+     *
+     * @param   string  $message  The chat message about the image.
+     * @param   string  $image    Image URL or base64 encoded image.
+     * @param   array   $options  Additional options for the request.
+     * 
+     * @return  Response
+     * @since  __DEPLOY_VERSION__
+     */
+    public function chatWithVision(string $message, string $image, array $options = []): Response
+    {
+        
+        $requestData = $this->buildVisionRequestPayload($message, $image, $options);
+        
+        $endpoint = $this->getEndpoint();
+        $headers = $this->buildHeaders();
+        
+        $httpResponse = $this->makePostRequest(
+            $endpoint, 
+            json_encode($requestData), 
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+        
+        return $this->parseOpenAIResponse($httpResponse->body);
+    }
+
+    /**
+     * Ask method - alias for chat/prompt for now
      *
      * @param   string  $question  The question to ask
      * @param   array   $options   Additional options
@@ -96,26 +126,91 @@ class OpenAIProvider extends AbstractProvider
      */
     public function ask(string $question, array $options = []): Response
     {
-        return $this->prompt($question, $options);
+        return $this->chat($question, $options);
+    }
+
+    /**
+     * Alias for chat/prompt for now.
+     *
+     * @param   string  $prompt   The prompt to send
+     * @param   array   $options  Additional options
+     * 
+     * @return  Response
+     * @since  __DEPLOY_VERSION__
+     */
+    public function prompt(string $prompt, array $options = []): Response
+    {
+        return $this->chat($prompt, $options);
     }
 
     /**
      * Build the request payload for OpenAI API.
      *
-     * @param   string  $prompt   The user prompt
+     * @param   string  $message   The user message to send
      * @param   array   $options  Additional options
      * 
      * @return  array   The request payload
      * @since  __DEPLOY_VERSION__
      */
-    private function buildRequestPayload(string $prompt, array $options = []): array
+    private function buildRequestPayload(string $message, array $options = []): array
     {
         $payload = [
             'model' => $options['model'] ?? $this->getOption('model', self::DEFAULT_MODEL),
             'messages' => [
                 [
                     'role' => 'user',
-                    'content' => $prompt
+                    'content' => $message
+                ]
+            ]
+        ];
+
+        // To Do: Add optional parameters if provided
+        if (isset($options['max_tokens'])) {
+            $payload['max_tokens'] = (int) $options['max_tokens'];
+        }
+
+        if (isset($options['temperature'])) {
+            $payload['temperature'] = (float) $options['temperature'];
+        }
+
+        if (isset($options['n'])) {
+            $payload['n'] = (int) $options['n'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Build the request payload for OpenAI API with vision capability.
+     *
+     * @param   string  $message  The chat message about the image
+     * @param   string  $image    Image URL or base64 encoded image
+     * @param   array   $options  Additional options
+     * 
+     * @return  array   The request payload
+     * @since  __DEPLOY_VERSION__
+     */
+    private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
+    {
+       $content = [
+            [
+                'type' => 'text',
+                'text' => $message
+            ],
+            [
+                'type' => 'image_url',
+                'image_url' => [
+                    'url' => $image
+                ]
+            ]
+        ];
+            
+        $payload = [
+            'model' => $options['model'] ?? $this->getOption('model', self::DEFAULT_MODEL),
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => $content
                 ]
             ]
         ];
