@@ -119,6 +119,53 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Check if a model is available with the provider.
+     *
+     * @param   string  $model           The model to check
+     * @param   array   $availableModels Array of available models
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function isModelAvailable(string $model, array $availableModels): bool
+    {
+        return in_array($model, $availableModels, true);
+    }
+
+    /**
+     * Get models that support a specific capability from available models.
+     *
+     * @param   array  $availableModels  All available models
+     * @param   array  $capableModels    Models that support the capability
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getModelsByCapability(array $availableModels, array $capableModels): array
+    {
+        return array_values(array_intersect($availableModels, $capableModels));
+    }
+
+    /**
+     * Check if a model supports a specific capability.
+     *
+     * @param   string  $model          The model to check
+     * @param   string  $capability     The capability to check
+     * @param   array   $capabilityMap  Map of capabilities to model arrays
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function checkModelCapability(string $model, string $capability, array $capabilityMap): bool
+    {
+        if (!isset($capabilityMap[$capability])) {
+            return false;
+        }
+        
+        return $this->isModelAvailable($model, $capabilityMap[$capability]);
+    }
+
+    /**
      * Check response code and handle errors
      *
      * @param   \Joomla\Http\Response  $response  HTTP response

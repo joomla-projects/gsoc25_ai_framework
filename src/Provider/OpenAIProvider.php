@@ -12,13 +12,14 @@ namespace Joomla\AI\Provider;
 use Joomla\AI\AbstractProvider;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Response\Response;
+use Joomla\AI\Interface\ModelInterface;
 
 /**
  * OpenAI provider implementation for chat completions.
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ChatInterface
+class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface
 {
     /**
      * Default OpenAI API endpoint for chat completions
@@ -27,14 +28,22 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
      * @since  __DEPLOY_VERSION__
      */
     private const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-    
+
     /**
-     * Default model to use for chat completions
-     *      
-     * @var string
+     * Models that support chat capability.
+     *
+     * @var array
      * @since  __DEPLOY_VERSION__
      */
-    private const DEFAULT_MODEL = 'gpt-4o-mini';
+    private const CHAT_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+
+    /**
+     * Models that support vision capability.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const VISION_MODELS = ['gpt-4o', 'gpt-4o-mini'];
 
     /**
      * Check if OpenAI provider is supported/configured.
@@ -60,6 +69,76 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
     }
 
     /**
+     * Get all available models for this provider.
+     *
+     * @return  array  Array of available model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getAvailableModels(): array
+    {
+        $response = $this->makeGetRequest('https://api.openai.com/v1/models');
+        $data = $this->parseJsonResponse($response->body);
+        
+        return array_column($data['data'], 'id');
+    }
+
+    /**
+     * Get models that support chat capability.
+     *
+     * @return  array  Array of chat-capable model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getChatModels(): array
+    {
+        $available = $this->getAvailableModels();
+        return $this->getModelsByCapability($available, self::CHAT_MODELS);
+    }
+
+    /**
+     * Get models that support vision capability.
+     *
+     * @return  array  Array of vision-capable model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getVisionModels(): array
+    {
+        $available = $this->getAvailableModels();
+        return $this->getModelsByCapability($available, self::VISION_MODELS);
+    }
+
+    /**
+     * Check if a specific model is supported by this provider.
+     *
+     * @param   string  $model  The model name to check
+     *
+     * @return  bool    True if model is available, false otherwise
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isModelSupported(string $model): bool
+    {
+        $available = $this->getAvailableModels();
+        return $this->isModelAvailable($model, $available);
+    }
+
+    /**
+     * Check if a model supports a specific capability.
+     *
+     * @param   string  $model       The model name to check
+     * @param   string  $capability  The capability to check (chat, image, vision)
+     *
+     * @return  bool    True if model supports the capability, false otherwise
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isModelCapable(string $model, string $capability): bool
+    {
+        $capabilityMap = [
+            'chat' => self::CHAT_MODELS,
+            'vision' => self::VISION_MODELS
+        ];
+        return $this->checkModelCapability($model, $capability, $capabilityMap);
+    }
+
+    /**
      * Send a message to OpenAI and return response.
      *
      * @param   string  $message   The message to send
@@ -70,8 +149,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
      */
     public function chat(string $message, array $options = []): Response
     {
-        $requestData = $this->buildRequestPayload($message, $options);
-        
+        $requestData = $this->buildChatRequestPayload($message, $options, 'chat');
+
+        // To Do: Remove repetition 
         $endpoint = $this->getEndpoint();
         $headers = $this->buildHeaders();
         
@@ -99,7 +179,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
     public function chatWithVision(string $message, string $image, array $options = []): Response
     {
         
-        $requestData = $this->buildVisionRequestPayload($message, $image, $options);
+        $requestData = $this->buildVisionRequestPayload($message, $image, $options, 'vision');
         
         $endpoint = $this->getEndpoint();
         $headers = $this->buildHeaders();
@@ -150,12 +230,19 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
      * @param   array   $options  Additional options
      * 
      * @return  array   The request payload
+     * @throws  \InvalidArgumentException  If model does not support chat capability
      * @since  __DEPLOY_VERSION__
      */
-    private function buildRequestPayload(string $message, array $options = []): array
+    private function buildChatRequestPayload(string $message, array $options = [], string $capability): array
     {
+        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
+        
+        if (!$this->isModelCapable($model, $capability)) {
+            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+        }
+
         $payload = [
-            'model' => $options['model'] ?? $this->getOption('model', self::DEFAULT_MODEL),
+            'model' => $model,
             'messages' => [
                 [
                     'role' => 'user',
@@ -188,11 +275,18 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
      * @param   array   $options  Additional options
      * 
      * @return  array   The request payload
+     * @throws  \InvalidArgumentException  If model does not support vision capability
      * @since  __DEPLOY_VERSION__
      */
-    private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
+    private function buildVisionRequestPayload(string $message, string $image, array $options = [], string $capability): array
     {
-       $content = [
+        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
+        
+        if (!$this->isModelCapable($model, $capability)) {
+            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+        }
+
+        $content = [
             [
                 'type' => 'text',
                 'text' => $message
@@ -206,7 +300,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface
         ];
             
         $payload = [
-            'model' => $options['model'] ?? $this->getOption('model', self::DEFAULT_MODEL),
+            'model' => $model,
             'messages' => [
                 [
                     'role' => 'user',
