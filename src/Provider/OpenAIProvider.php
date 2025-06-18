@@ -11,6 +11,7 @@ namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
 use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Interface\ImageInterface
 use Joomla\AI\Response\Response;
 use Joomla\AI\Interface\ModelInterface;
 
@@ -19,7 +20,7 @@ use Joomla\AI\Interface\ModelInterface;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface
+class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface
 {
     /**
      * Default OpenAI API endpoint for chat completions
@@ -28,6 +29,38 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+
+    /**
+     * OpenAI API endpoint for image generation
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations';
+
+    /**
+     * OpenAI API endpoint for image editing
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits';
+
+    /**
+     * OpenAI API endpoint for image variations
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const IMAGE_VARIATIONS_ENDPOINT = 'https://api.openai.com/v1/images/variations';
+
+    /**
+     * OpenAI API endpoint for conversational responses
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses/create';
 
     /**
      * Models that support chat capability.
@@ -44,6 +77,22 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const VISION_MODELS = ['gpt-4o', 'gpt-4o-mini'];
+
+    /**
+     * Models that support image generation capability.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const IMAGE_MODELS = ['dall-e-2', 'dall-e-3', 'gpt-image-1'];
+
+    /**
+     * Models that support conversational image generation.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const CONVERSATIONAL_IMAGE_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o', 'gpt-4o-mini'];
 
     /**
      * Check if OpenAI provider is supported/configured.
@@ -109,6 +158,18 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Get models that support image generation capability.
+     *
+     * @return  array  Array of image capable model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getImageModels(): array
+    {
+        $available = $this->getAvailableModels();
+        return $this->getModelsByCapability($available, self::IMAGE_MODELS);
+    }
+
+    /**
      * Check if a specific model is supported by this provider.
      *
      * @param   string  $model  The model name to check
@@ -135,7 +196,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         $capabilityMap = [
             'chat' => self::CHAT_MODELS,
-            'vision' => self::VISION_MODELS
+            'vision' => self::VISION_MODELS,
+            'image' => self::IMAGE_MODELS,
+            'conversational_image' => self::CONVERSATIONAL_IMAGE_MODELS
         ];
         return $this->checkModelCapability($model, $capability, $capabilityMap);
     }
@@ -195,6 +258,59 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->validateResponse($httpResponse);
         
         return $this->parseOpenAIResponse($httpResponse->body);
+    }
+
+    /**
+     * Generate a new image from the given prompt.
+     *
+     * @param   string  $prompt   Descriptive text prompt for the desired image.
+     * @param   array   $options  Additional options for the request.
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function generateImage(string $prompt, array $options = []): Response
+    {
+        $requestData = $this->buildImageRequestPayload($prompt, $options, 'image');
+        
+        $headers = $this->buildHeaders();
+        
+        $httpResponse = $this->makePostRequest(
+            self::IMAGE_ENDPOINT, 
+            json_encode($requestData), 
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+        
+        return $this->parseImageResponse($httpResponse->body);
+    }
+
+    /**
+     * Generate an image through conversational interaction.
+     *
+     * @param   string  $prompt   Text prompt for image generation or refinement.
+     * @param   array   $context  Conversation context for multi-turn interactions.
+     * @param   array   $options  Additional options for the request.
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function generateImageConversational(string $prompt, array $context = [], array $options = []): Response
+    {
+        $requestData = $this->buildConversationalImageRequestPayload($prompt, $context, $options);
+        
+        $headers = $this->buildHeaders();
+        
+        $httpResponse = $this->makePostRequest(
+            self::RESPONSES_ENDPOINT, 
+            json_encode($requestData), 
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+        
+        return $this->parseConversationalImageResponse($httpResponse->body);
     }
 
     /**
@@ -325,6 +441,52 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
 
         return $payload;
+    }
+
+    /**
+     * Build request payload for image generation.
+     *
+     * @param   string  $prompt      The image generation prompt.
+     * @param   array   $options     Additional options for the request.
+     * @param   string  $capability  Required capability.
+     *
+     * @return  array  The request payload.
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildImageRequestPayload(string $prompt, array $options, string $capability): array
+    {
+        $model = $options['model'] ?? 'gpt-image-1';
+        
+        if (!$this->isModelCapable($model, $capability)) {
+            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+        }
+
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'n' => $options['count'] ?? 1,
+            'size' => $options['size'] ?? '1024x1024',
+            'response_format' => 'b64_json',
+            'quality' => $options['quality'] ?? 'standard'
+        ];
+
+        // To Do: Add optional parameters if provided
+
+        return $payload;
+    }
+
+    /**
+     * Build request payload for conversational image generation.
+     *
+     * @param   string  $prompt   The image generation prompt.
+     * @param   array   $context  Conversation context.
+     * @param   array   $options  Generation options.
+     *
+     * @return  array  The request payload
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildConversationalImageRequestPayload(string $prompt, array $context, array $options): array
+    {
     }
 
     /**
