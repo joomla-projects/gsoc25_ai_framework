@@ -30,18 +30,6 @@ interface ImageInterface
     public function generateImage(string $prompt, array $options = []): Response;
 
     /**
-     * Generate an image through conversational interaction with the AI provider.
-     *
-     * @param   string  $prompt    Text prompt for image generation or refinement.
-     * @param   array   $context   Conversation context for multi-turn interactions.
-     * @param   array   $options   An associative array of options to send with the request.
-     *
-     * @return  Response
-     * @since   __DEPLOY_VERSION__
-     */
-    public function generateImageConversational(string $prompt, array $context = [], array $options = []): Response;
-
-    /**
      * Modify an existing image from the text prompt given to the AI provider.
      *
      * @param   string  $imagePath  Path to the image file to modify.

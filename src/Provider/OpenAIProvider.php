@@ -55,14 +55,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const IMAGE_VARIATIONS_ENDPOINT = 'https://api.openai.com/v1/images/variations';
 
     /**
-     * OpenAI API endpoint for conversational responses
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses/create';
-
-    /**
      * Models that support chat capability.
      *
      * @var array
@@ -85,14 +77,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const IMAGE_MODELS = ['dall-e-2', 'dall-e-3', 'gpt-image-1'];
-
-    /**
-     * Models that support conversational image generation.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const CONVERSATIONAL_IMAGE_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o', 'gpt-4o-mini'];
 
     /**
      * Check if OpenAI provider is supported/configured.
@@ -198,7 +182,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             'chat' => self::CHAT_MODELS,
             'vision' => self::VISION_MODELS,
             'image' => self::IMAGE_MODELS,
-            'conversational_image' => self::CONVERSATIONAL_IMAGE_MODELS
         ];
         return $this->checkModelCapability($model, $capability, $capabilityMap);
     }
@@ -284,33 +267,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->validateResponse($httpResponse);
         
         return $this->parseImageResponse($httpResponse->body);
-    }
-
-    /**
-     * Generate an image through conversational interaction.
-     *
-     * @param   string  $prompt   Text prompt for image generation or refinement.
-     * @param   array   $context  Conversation context for multi-turn interactions.
-     * @param   array   $options  Additional options for the request.
-     *
-     * @return  Response
-     * @since   __DEPLOY_VERSION__
-     */
-    public function generateImageConversational(string $prompt, array $context = [], array $options = []): Response
-    {
-        $requestData = $this->buildConversationalImageRequestPayload($prompt, $context, $options, 'conversational_image');
-        
-        $headers = $this->buildHeaders();
-        
-        $httpResponse = $this->makePostRequest(
-            self::RESPONSES_ENDPOINT, 
-            json_encode($requestData), 
-            $headers
-        );
-        
-        $this->validateResponse($httpResponse);
-        
-        return $this->parseConversationalImageResponse($httpResponse->body);
     }
 
     /**
@@ -455,8 +411,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageRequestPayload(string $prompt, array $options, string $capability): array
     {
-        $model = $options['model'] ?? 'gpt-image-1';
-        
+        $model = $options['model'] ?? 'dall-e-2';
+
         if (!$this->isModelCapable($model, $capability)) {
             throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
         }
@@ -464,80 +420,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $payload = [
             'model' => $model,
             'prompt' => $prompt,
-            'n' => $options['count'] ?? 1,
-            'size' => $options['size'] ?? '1024x1024',
-            'response_format' => 'b64_json',
-            'quality' => $options['quality'] ?? 'standard'
+            // 'n' => $options['count'] ?? 1,
+            // 'size' => $options['size'] ?? '1024x1024',
+            // 'response_format' => 'b64_json',
+            // 'quality' => $options['quality'] ?? 'standard'
         ];
 
         // To Do: Add optional parameters if provided
-
-        return $payload;
-    }
-
-    /**
-     * Build request payload for conversational image generation.
-     *
-     * @param   string  $prompt   The image generation prompt.
-     * @param   array   $context  Conversation context.
-     * @param   array   $options  Additional options for the request.
-     *
-     * @return  array  The request payload
-     * @since   __DEPLOY_VERSION__
-     */
-    private function buildConversationalImageRequestPayload(string $prompt, array $context, array $options, string $capability): array
-    {
-        $model = $options['model'] ?? 'gpt-4.1-mini';
-        
-        if (!$this->isModelCapable($model, $capability)) {
-            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
-        }
-
-        $payload = [
-            'model' => $model,
-            'input' => $prompt,
-            'tools' => [
-                [
-                    'type' => 'image_generation'
-                ]
-            ]
-        ];
-
-        if (!empty($context['previous_response_id'])) {
-            $payload['previous_response_id'] = $context['previous_response_id'];
-        }
-
-        if (!empty($context['image_id'])) {
-            $payload['input'] = [
-                [
-                    'role' => 'user',
-                    'content' => [
-                        ['type' => 'input_text', 'text' => $prompt]
-                    ]
-                ],
-                [
-                    'type' => 'image_generation_call',
-                    'id' => $context['image_id']
-                ]
-            ];
-        }
-
-        // To Do: Add optional parameters if provided
-        $toolOptions = [];
-        
-        if (isset($options['size'])) {
-            $toolOptions['size'] = $options['size'];
-        }
-
-        // Can give partial images a default number
-        if (!empty($options['stream']) && !empty($options['partial_images'])) {
-            $toolOptions['partial_images'] = $options['partial_images'];
-            $payload['stream'] = true;
-        }
-
-        if (!empty($toolOptions)) {
-            $payload['tools'][0] = array_merge($payload['tools'][0], $toolOptions);
-        }
 
         return $payload;
     }
@@ -663,62 +552,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         return new Response(
             $content,
-            $this->getName(),
-            $metadata,
-            200
-        );
-    }
-    
-    /**
-    * Parse OpenAI Responses API response for conversational images.
-    *
-    * @param   string  $responseBody  The JSON response body
-    *
-    * @return  Response  Unified response object
-    * @throws  \Exception  If response parsing fails
-    * @since   __DEPLOY_VERSION__
-    */
-    private function parseConversationalImageResponse(string $responseBody): Response
-    {
-        $data = $this->parseJsonResponse($responseBody);
-        
-        if (isset($data['error'])) {
-            throw new \Exception(
-                'OpenAI Responses API Error: ' . ($data['error']['message'] ?? 'Unknown error')
-            );
-        }
-
-        $imageData = '';
-        $revisedPrompt = '';
-        $imageCallId = '';
-        
-        if (isset($data['output']) && is_array($data['output'])) {
-            foreach ($data['output'] as $output) {
-                if ($output['type'] === 'image_generation_call' && $output['status'] === 'completed') {
-                    $imageData = $output['result'];
-                    $revisedPrompt = $output['revised_prompt'] ?? '';
-                    $imageCallId = $output['id'] ?? '';
-                    break;
-                }
-            }
-        }
-
-        $metadata = [
-            'created' => time(),
-            'format' => 'base64_png',
-            'response_type' => 'conversational_image'
-        ];
-
-        if ($revisedPrompt) {
-            $metadata['revised_prompt'] = $revisedPrompt;
-        }
-        
-        if ($imageCallId) {
-            $metadata['image_call_id'] = $imageCallId;
-        }
-
-        return new Response(
-            $imageData,
             $this->getName(),
             $metadata,
             200
