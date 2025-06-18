@@ -3,7 +3,7 @@
 /**
  * Part of the Joomla Framework AI Package
  *
- * @copyright  opyright (C) 2025 Open Source Matters, Inc. All rights reserved.
+ * @copyright  Copyright (C) 2025 Open Source Matters, Inc. All rights reserved.
  * @license    GNU General Public License version 2 or later; see LICENSE
  */
 
@@ -419,13 +419,18 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         $payload = [
             'model' => $model,
-            'prompt' => $prompt,
-            // 'n' => $options['count'] ?? 1,
-            // 'size' => $options['size'] ?? '1024x1024',
-            // 'response_format' => 'b64_json',
-            // 'quality' => $options['quality'] ?? 'standard'
+            'prompt' => $prompt
         ];
-
+        
+        if (in_array($model, ['dall-e-2', 'dall-e-3'])) {
+            $responseFormat = $options['response_format'] ?? 'b64_json';
+            if (in_array($responseFormat, ['url', 'b64_json'])) {
+                $payload['response_format'] = $responseFormat;
+            } else {
+                throw new \InvalidArgumentException("Unsupported response format: $responseFormat");
+            }
+        }
+        
         // To Do: Add optional parameters if provided
 
         return $payload;
@@ -539,19 +544,50 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             );
         }
 
-        $content = $data['data'][0]['b64_json'] ?? '';
+        $imageData = '';
+        $imageUrl = '';
+        $revisedPrompt = '';
+        $responseFormat = '';
         
+        $firstImage = $data['data'][0];
+            
+        // Check for base64 data (gpt-image-1 default, or dall-e with response_format = b64_json)
+        if (isset($firstImage['b64_json'])) {
+            $imageData = $firstImage['b64_json'];
+            $responseFormat = 'base64';
+        }
+
+        // Check for URL (dall-e-2/dall-e-3 with response_format = url)
+        if (isset($firstImage['url'])) {
+            $imageUrl = $firstImage['url'];
+            $responseFormat = 'url';
+        }
+        
+        // Revised prompt (dall-e-3 only)
+        if (isset($firstImage['revised_prompt'])) {
+            $revisedPrompt = $firstImage['revised_prompt'];
+        }
+
         $metadata = [
-            'usage' => $data['usage'] ?? null,
             'created' => $data['created'] ?? time(),
-            'format' => 'base64_png',
-            'total_images' => count($data['data']),
-            'revised_prompt' => $data['data'][0]['revised_prompt'] ?? null,
-            'size' => $data['data'][0]['size'] ?? 'unknown'
+            'format' => $responseFormat === 'base64' ? 'base64_png' : 'url',
+            'response_format' => $responseFormat,
+            'total_images' => isset($data['data']) ? count($data['data']) : 1
         ];
 
+        if ($imageUrl) {
+            $metadata['image_url'] = $imageUrl;
+            $metadata['url_expires'] = 'URLs are valid for 60 minutes';
+        }
+
+        // Add usage/token information if available (gpt-image-1 only)
+        if (isset($data['usage'])) {
+            $metadata['usage'] = $data['usage'];
+            $metadata['total_tokens'] = $data['usage']['total_tokens'];
+        }
+
         return new Response(
-            $content,
+            $imageData,
             $this->getName(),
             $metadata,
             200
