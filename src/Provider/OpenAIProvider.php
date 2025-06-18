@@ -11,7 +11,7 @@ namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
 use Joomla\AI\Interface\ChatInterface;
-use Joomla\AI\Interface\ImageInterface
+use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Response\Response;
 use Joomla\AI\Interface\ModelInterface;
 
@@ -298,7 +298,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function generateImageConversational(string $prompt, array $context = [], array $options = []): Response
     {
-        $requestData = $this->buildConversationalImageRequestPayload($prompt, $context, $options);
+        $requestData = $this->buildConversationalImageRequestPayload($prompt, $context, $options, 'conversational_image');
         
         $headers = $this->buildHeaders();
         
@@ -480,13 +480,66 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      *
      * @param   string  $prompt   The image generation prompt.
      * @param   array   $context  Conversation context.
-     * @param   array   $options  Generation options.
+     * @param   array   $options  Additional options for the request.
      *
      * @return  array  The request payload
      * @since   __DEPLOY_VERSION__
      */
-    private function buildConversationalImageRequestPayload(string $prompt, array $context, array $options): array
+    private function buildConversationalImageRequestPayload(string $prompt, array $context, array $options, string $capability): array
     {
+        $model = $options['model'] ?? 'gpt-4.1-mini';
+        
+        if (!$this->isModelCapable($model, $capability)) {
+            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+        }
+
+        $payload = [
+            'model' => $model,
+            'input' => $prompt,
+            'tools' => [
+                [
+                    'type' => 'image_generation'
+                ]
+            ]
+        ];
+
+        if (!empty($context['previous_response_id'])) {
+            $payload['previous_response_id'] = $context['previous_response_id'];
+        }
+
+        if (!empty($context['image_id'])) {
+            $payload['input'] = [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'input_text', 'text' => $prompt]
+                    ]
+                ],
+                [
+                    'type' => 'image_generation_call',
+                    'id' => $context['image_id']
+                ]
+            ];
+        }
+
+        // To Do: Add optional parameters if provided
+        $toolOptions = [];
+        
+        if (isset($options['size'])) {
+            $toolOptions['size'] = $options['size'];
+        }
+
+        // Can give partial images a default number
+        if (!empty($options['stream']) && !empty($options['partial_images'])) {
+            $toolOptions['partial_images'] = $options['partial_images'];
+            $payload['stream'] = true;
+        }
+
+        if (!empty($toolOptions)) {
+            $payload['tools'][0] = array_merge($payload['tools'][0], $toolOptions);
+        }
+
+        return $payload;
     }
 
     /**
@@ -575,6 +628,100 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $this->getName(),
             $metadata,
             $statusCode
+        );
+    }
+
+    /**
+     * Parse OpenAI Image API response into unified Response object.
+     *
+     * @param   string  $responseBody  The JSON response body
+     * 
+     * @return  Response  Unified response object
+     * @throws  \Exception  If response parsing fails
+     * @since  __DEPLOY_VERSION__
+     */
+    private function parseImageResponse(string $responseBody): Response
+    {
+        $data = $this->parseJsonResponse($responseBody);
+        
+        if (isset($data['error'])) {
+            throw new \Exception(
+                'OpenAI Image API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+            );
+        }
+
+        $content = $data['data'][0]['b64_json'] ?? '';
+        
+        $metadata = [
+            'usage' => $data['usage'] ?? null,
+            'created' => $data['created'] ?? time(),
+            'format' => 'base64_png',
+            'total_images' => count($data['data']),
+            'revised_prompt' => $data['data'][0]['revised_prompt'] ?? null,
+            'size' => $data['data'][0]['size'] ?? 'unknown'
+        ];
+
+        return new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            200
+        );
+    }
+    
+    /**
+    * Parse OpenAI Responses API response for conversational images.
+    *
+    * @param   string  $responseBody  The JSON response body
+    *
+    * @return  Response  Unified response object
+    * @throws  \Exception  If response parsing fails
+    * @since   __DEPLOY_VERSION__
+    */
+    private function parseConversationalImageResponse(string $responseBody): Response
+    {
+        $data = $this->parseJsonResponse($responseBody);
+        
+        if (isset($data['error'])) {
+            throw new \Exception(
+                'OpenAI Responses API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+            );
+        }
+
+        $imageData = '';
+        $revisedPrompt = '';
+        $imageCallId = '';
+        
+        if (isset($data['output']) && is_array($data['output'])) {
+            foreach ($data['output'] as $output) {
+                if ($output['type'] === 'image_generation_call' && $output['status'] === 'completed') {
+                    $imageData = $output['result'];
+                    $revisedPrompt = $output['revised_prompt'] ?? '';
+                    $imageCallId = $output['id'] ?? '';
+                    break;
+                }
+            }
+        }
+
+        $metadata = [
+            'created' => time(),
+            'format' => 'base64_png',
+            'response_type' => 'conversational_image'
+        ];
+
+        if ($revisedPrompt) {
+            $metadata['revised_prompt'] = $revisedPrompt;
+        }
+        
+        if ($imageCallId) {
+            $metadata['image_call_id'] = $imageCallId;
+        }
+
+        return new Response(
+            $imageData,
+            $this->getName(),
+            $metadata,
+            200
         );
     }
 
