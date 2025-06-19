@@ -270,6 +270,142 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Edit an image using OpenAI Image Edit API.
+     *
+     * @param   string  $prompt   The text description of the desired edit
+     * @param   mixed   $images   Image file path(s), base64 string(s), or array of either
+     * @param   array   $options  Additional options for image editing
+     *
+     * @return  Response  The response containing the edited image
+     * @since   __DEPLOY_VERSION__
+     */
+    public function editImage(string $prompt, $images, array $options = []): Response
+    {
+        // Only dall-e-2 and gpt-image-1 support editing
+        $model = $options['model'] ?? 'dall-e-2';
+        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
+            throw new \InvalidArgumentException('Image editing only supports dall-e-2 and gpt-image-1 models');
+        }
+
+        $formData = $this->buildImageEditFormData($prompt, $images, $options);
+        
+        $headers = $this->buildHeaders();
+        
+        $httpResponse = $this->makeMultipartPostRequest(
+            self::IMAGE_EDIT_ENDPOINT, 
+            $formData, 
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+        
+        return $this->parseImageResponse($httpResponse->body);
+    }
+
+    /**
+     * Build form data for image edit request.
+     *
+     * @param   string  $prompt   The edit prompt
+     * @param   mixed   $images   Image data (various formats)
+     * @param   array   $options  Additional options
+     *
+     * @return  array  Form data for multipart request
+     * @throws  \InvalidArgumentException  If data is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildImageEditFormData(string $prompt, $images, array $options): array
+    {
+        $model = $options['model'] ?? 'dall-e-2';
+        
+        $formData = [
+            'model' => $model,
+            'prompt' => $prompt
+        ];
+
+        if ($model === 'dall-e-2') {
+            // DALL-E 2: Only single image allowed
+            if (is_array($images) && count($images) > 1) {
+                throw new \InvalidArgumentException('DALL-E 2 only supports editing one image at a time');
+            }
+
+            // To Do: Validate square PNG for DALL-E 2
+            $image = is_array($images) ? $images[0] : $images;
+            $imageData = $this->processImageInput($image);
+            $formData["image"] = $imageData;
+        } else {
+            // GPT-Image-1: Supports multiple images (up to 16)
+            $imageArray = is_array($images) ? $images : [$images];
+            
+            if (count($imageArray) > 16) {
+                throw new \InvalidArgumentException('GPT-Image-1 supports maximum 16 images for editing');
+            }
+            
+            if (count($imageArray) === 1) {
+                $imageData = $this->processImageInput($imageArray[0]);
+                $formData["image"] = $imageData;
+            } else {
+                $formData["images"] = [];
+                foreach ($imageArray as $image) {
+                    $imageData = $this->processImageInput($image);
+                    $formData["images"][] = $imageData;
+                }
+            }
+        }
+
+        // Handle mask if provided
+        if (isset($options['mask'])) {
+            $maskData = $this->processImageInput($options['mask']);
+            $formData['mask'] = $maskData;
+        }
+
+        // Add response format for DALL-E 2 only
+        if ($model === 'dall-e-2') {
+            $formData['response_format'] = $options['response_format'] ?? 'b64_json';
+        }
+
+        // To Do: Add optional parameters
+
+        return $formData;
+    }
+
+    /**
+     * Process image input.
+     *
+     * @param   mixed   $image  Image file path or base64 string
+     *
+     * @return  array  Processed image data for form upload
+     * @since   __DEPLOY_VERSION__
+     */
+    private function processImageInput($image): array
+    {
+        // Case 1: File path
+        if (is_string($image) && file_exists($image)) {
+            return [
+                'name' => basename($image),
+                'type' => mime_content_type($image),
+                'content' => file_get_contents($image)
+            ];
+        }
+        
+        // Case 2: Base64 string
+        if (is_string($image)) {
+            if (strpos($image, 'data:') === 0) {
+                $image = substr($image, strpos($image, ',') + 1);
+            }
+            
+            $content = base64_decode($image);
+            
+            return [
+                'name' => 'image.png',
+                'type' => 'image/png',
+                'content' => $content
+            ];
+        }
+        
+        throw new \InvalidArgumentException('Invalid image format. Provide file path or base64 string');
+    }
+
+    /**
      * Ask method - alias for chat/prompt for now
      *
      * @param   string  $question  The question to ask
