@@ -118,6 +118,40 @@ abstract class AbstractProvider implements ProviderInterface
         return $response;
     }
 
+    
+    /**
+     * Make multipart HTTP POST request.
+     *
+     * @param   string  $url      API endpoint URL  
+     * @param   array   $data     Form data
+     * @param   array   $headers  HTTP headers
+     *
+     * @return  \Joomla\Http\Response
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function makeMultipartPostRequest(string $url, array $data, array $headers): \Joomla\Http\Response
+    {
+        $boundary = '----aiframeworkjoomla-boundary-' . uniqid();
+        $headers['Content-Type'] = 'multipart/form-data; boundary=' . $boundary;
+        
+        $postData = '';
+        foreach ($data as $key => $value) {
+            $postData .= "--{$boundary}\r\n";
+            
+            if ($key === 'image') {
+                $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
+                $postData .= "Content-Type: image/png\r\n\r\n";
+                $postData .= $value . "\r\n";
+            } else {
+                $postData .= "Content-Disposition: form-data; name=\"{$key}\"\r\n\r\n";
+                $postData .= $value . "\r\n";
+            }
+        }
+        $postData .= "--{$boundary}--\r\n";
+        
+        return $this->makePostRequest($url, $postData, $headers);
+    }
+
     /**
      * Check if a model is available with the provider.
      *

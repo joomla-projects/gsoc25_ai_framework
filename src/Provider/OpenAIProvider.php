@@ -270,29 +270,24 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Edit an image using OpenAI Image Edit API.
+     * Create variations of an image using OpenAI Image API.
      *
-     * @param   string  $prompt   The text description of the desired edit
-     * @param   mixed   $images   Image file path(s), base64 string(s), or array of either
-     * @param   array   $options  Additional options for image editing
+     * @param   string  $imagePath  Path to the image file to create variations of.
+     * @param   array   $options    Additional options for the request.
      *
-     * @return  Response  The response containing the edited image
+     * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function editImage(string $prompt, $images, array $options = []): Response
+    public function createImageVariation(string $imagePath, array $options = []): Response
     {
-        // Only dall-e-2 and gpt-image-1 support editing
-        $model = $options['model'] ?? 'dall-e-2';
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
-            throw new \InvalidArgumentException('Image editing only supports dall-e-2 and gpt-image-1 models');
-        }
-
-        $formData = $this->buildImageEditFormData($prompt, $images, $options);
+        // To Do: Validate image file
         
-        $headers = $this->buildHeaders();
+        $formData = $this->buildImageVariationPayload($imagePath, $options);
+        
+        $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
-            self::IMAGE_EDIT_ENDPOINT, 
+            self::IMAGE_VARIATIONS_ENDPOINT, 
             $formData, 
             $headers
         );
@@ -303,106 +298,72 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build form data for image edit request.
+     * Build the request payload for image variation request.
      *
-     * @param   string  $prompt   The edit prompt
-     * @param   mixed   $images   Image data (various formats)
-     * @param   array   $options  Additional options
+     * @param   string  $imagePath  Path to the image file.
+     * @param   array   $options    Additional options for the request.
      *
-     * @return  array  Form data for multipart request
-     * @throws  \InvalidArgumentException  If data is invalid
+     * @return  array  The form data for multipart request.
      * @since   __DEPLOY_VERSION__
      */
-    private function buildImageEditFormData(string $prompt, $images, array $options): array
+    private function buildImageVariationPayload(string $imagePath, array $options): array
     {
         $model = $options['model'] ?? 'dall-e-2';
         
-        $formData = [
+        // Only dall-e-2 supports variations
+        if ($model !== 'dall-e-2') {
+            throw new \InvalidArgumentException("Model '$model' does not support image variations. Only dall-e-2 is supported.");
+        }
+        
+        $payload = [
             'model' => $model,
-            'prompt' => $prompt
+            'image' => file_get_contents($imagePath)
         ];
-
-        if ($model === 'dall-e-2') {
-            // DALL-E 2: Only single image allowed
-            if (is_array($images) && count($images) > 1) {
-                throw new \InvalidArgumentException('DALL-E 2 only supports editing one image at a time');
+        
+        // To Do: Check additional optional parameters
+        if (isset($options['n'])) {
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 10) {
+                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
             }
-
-            // To Do: Validate square PNG for DALL-E 2
-            $image = is_array($images) ? $images[0] : $images;
-            $imageData = $this->processImageInput($image);
-            $formData["image"] = $imageData;
-        } else {
-            // GPT-Image-1: Supports multiple images (up to 16)
-            $imageArray = is_array($images) ? $images : [$images];
-            
-            if (count($imageArray) > 16) {
-                throw new \InvalidArgumentException('GPT-Image-1 supports maximum 16 images for editing');
-            }
-            
-            if (count($imageArray) === 1) {
-                $imageData = $this->processImageInput($imageArray[0]);
-                $formData["image"] = $imageData;
-            } else {
-                $formData["images"] = [];
-                foreach ($imageArray as $image) {
-                    $imageData = $this->processImageInput($image);
-                    $formData["images"][] = $imageData;
-                }
-            }
+            $payload['n'] = $n;
         }
-
-        // Handle mask if provided
-        if (isset($options['mask'])) {
-            $maskData = $this->processImageInput($options['mask']);
-            $formData['mask'] = $maskData;
+        
+        if (isset($options['size'])) {
+            $validSizes = ['256x256', '512x512', '1024x1024'];
+            if (!in_array($options['size'], $validSizes)) {
+                throw new \InvalidArgumentException('Size must be one of: ' . implode(', ', $validSizes));
+            }
+            $payload['size'] = $options['size'];
         }
-
-        // Add response format for DALL-E 2 only
-        if ($model === 'dall-e-2') {
-            $formData['response_format'] = $options['response_format'] ?? 'b64_json';
+        
+        if (isset($options['response_format'])) {
+            $validFormats = ['url', 'b64_json'];
+            if (!in_array($options['response_format'], $validFormats)) {
+                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+            }
+            $payload['response_format'] = $options['response_format'];
         }
 
         // To Do: Add optional parameters
 
-        return $formData;
+        return $payload;
     }
 
     /**
-     * Process image input.
+     * Build HTTP headers for multipart form data requests.
      *
-     * @param   mixed   $image  Image file path or base64 string
-     *
-     * @return  array  Processed image data for form upload
+     * @return  array  HTTP headers
      * @since   __DEPLOY_VERSION__
      */
-    private function processImageInput($image): array
+    private function buildMultipartHeaders(): array
     {
-        // Case 1: File path
-        if (is_string($image) && file_exists($image)) {
-            return [
-                'name' => basename($image),
-                'type' => mime_content_type($image),
-                'content' => file_get_contents($image)
-            ];
-        }
+        $apiKey = $this->getApiKey();
         
-        // Case 2: Base64 string
-        if (is_string($image)) {
-            if (strpos($image, 'data:') === 0) {
-                $image = substr($image, strpos($image, ',') + 1);
-            }
-            
-            $content = base64_decode($image);
-            
-            return [
-                'name' => 'image.png',
-                'type' => 'image/png',
-                'content' => $content
-            ];
-        }
-        
-        throw new \InvalidArgumentException('Invalid image format. Provide file path or base64 string');
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'User-Agent' => 'Joomla-AI-Framework'
+        ];
     }
 
     /**
@@ -672,7 +633,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function parseImageResponse(string $responseBody): Response
     {
+        // To Do: Clean Image API response for generation and editing
         $data = $this->parseJsonResponse($responseBody);
+        // error_log('OpenAI Image Response: ' . print_r($data, true));
         
         if (isset($data['error'])) {
             throw new \Exception(
@@ -680,50 +643,68 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             );
         }
 
-        $imageData = '';
-        $imageUrl = '';
-        $revisedPrompt = '';
+        $images = [];
         $responseFormat = '';
         
-        $firstImage = $data['data'][0];
-            
-        // Check for base64 data (gpt-image-1 default, or dall-e with response_format = b64_json)
-        if (isset($firstImage['b64_json'])) {
-            $imageData = $firstImage['b64_json'];
-            $responseFormat = 'base64';
+        if (isset($data['data']) && is_array($data['data'])) {
+            foreach ($data['data'] as $imageData) {
+                $imageItem = [];
+                
+                // Handle URL format
+                if (isset($imageData['url'])) {
+                    $imageItem['url'] = $imageData['url'];
+                    $responseFormat = 'url';
+                }
+                
+                // Handle base64 format
+                if (isset($imageData['b64_json'])) {
+                    $imageItem['b64_json'] = $imageData['b64_json'];
+                    $responseFormat = 'b64_json';
+                }
+                
+                // Handle revised prompt (DALL-E 3 only)
+                if (isset($imageData['revised_prompt'])) {
+                    $imageItem['revised_prompt'] = $imageData['revised_prompt'];
+                }
+                
+                $images[] = $imageItem;
+            }
         }
 
-        // Check for URL (dall-e-2/dall-e-3 with response_format = url)
-        if (isset($firstImage['url'])) {
-            $imageUrl = $firstImage['url'];
-            $responseFormat = 'url';
-        }
-        
-        // Revised prompt (dall-e-3 only)
-        if (isset($firstImage['revised_prompt'])) {
-            $revisedPrompt = $firstImage['revised_prompt'];
+        $content = '';
+        if ($responseFormat === 'url') {
+            // For URLs, create a clean list
+            $urls = array_column($images, 'url');
+            $content = count($urls) === 1 ? $urls[0] : json_encode($urls, JSON_PRETTY_PRINT);
+        } elseif ($responseFormat === 'b64_json') {
+            // For base64, return the data
+            $base64Data = array_column($images, 'b64_json');
+            $content = count($base64Data) === 1 ? $base64Data[0] : json_encode($base64Data, JSON_PRETTY_PRINT);
         }
 
         $metadata = [
             'created' => $data['created'] ?? time(),
-            'format' => $responseFormat === 'base64' ? 'base64_png' : 'url',
             'response_format' => $responseFormat,
-            'total_images' => isset($data['data']) ? count($data['data']) : 1
+            'image_count' => count($images),
+            'images' => $images
         ];
 
-        if ($imageUrl) {
-            $metadata['image_url'] = $imageUrl;
+        if ($responseFormat === 'url') {
             $metadata['url_expires'] = 'URLs are valid for 60 minutes';
+        } elseif ($responseFormat === 'b64_json') {
+            $metadata['format'] = 'base64_png';
         }
-
-        // Add usage/token information if available (gpt-image-1 only)
+        
         if (isset($data['usage'])) {
             $metadata['usage'] = $data['usage'];
-            $metadata['total_tokens'] = $data['usage']['total_tokens'];
+        }
+        
+        if (isset($data['model'])) {
+            $metadata['model'] = $data['model'];
         }
 
         return new Response(
-            $imageData,
+            $content,
             $this->getName(),
             $metadata,
             200
