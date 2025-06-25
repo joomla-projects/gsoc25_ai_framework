@@ -298,6 +298,35 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Edit an image using OpenAI Image API.
+     *
+     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string  $prompt   Description of desired edits
+     * @param   array   $options  Additional options for the request
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function editImage($images, string $prompt, array $options = []): Response
+    {
+        // To Do: Validate inputs
+
+        $formData = $this->buildImageEditPayload($images, $prompt, $options);
+        
+        $headers = $this->buildMultipartHeaders();
+        
+        $httpResponse = $this->makeMultipartPostRequest(
+            self::IMAGE_EDIT_ENDPOINT, 
+            $formData, 
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+        
+        return $this->parseImageResponse($httpResponse->body);
+    }
+
+    /**
      * Build the request payload for image variation request.
      *
      * @param   string  $imagePath  Path to the image file.
@@ -347,6 +376,51 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         // To Do: Add optional parameters
 
+        return $payload;
+    }
+
+    /**
+     * Build payload for image editing request.
+     *
+     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string  $prompt   Description of desired edits
+     * @param   array   $options  Additional options
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildImageEditPayload($images, string $prompt, array $options): array
+    {
+        $model = $options['model'] ?? 'dall-e-2';
+
+        // Only dall-e-2 and gpt-image-1 support image editing
+        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
+            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
+        }
+
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt
+        ];
+        
+        // Handle images
+        if (is_string($images)) {
+            // Single image
+            $payload['image'] = file_get_contents($images);
+        } else {
+            // Multiple images (gpt-image-1)
+            foreach ($images as $index => $imagePath) {
+                $payload["image[{$index}]"] = file_get_contents($imagePath);
+            }
+        }
+        
+        // Add mask if provided
+        if (isset($options['mask'])) {
+            $payload['mask'] = file_get_contents($options['mask']);
+        }
+
+        // To Do: Check additional optional parameters
+                
         return $payload;
     }
 

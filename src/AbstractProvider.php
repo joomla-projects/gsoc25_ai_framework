@@ -138,11 +138,30 @@ abstract class AbstractProvider implements ProviderInterface
         foreach ($data as $key => $value) {
             $postData .= "--{$boundary}\r\n";
             
+            // Handle single image field
+            // To do: Currently strict format for single image field
             if ($key === 'image') {
                 $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
                 $postData .= "Content-Type: image/png\r\n\r\n";
                 $postData .= $value . "\r\n";
-            } else {
+            }
+            // Handle multiple image fields (image[0], image[1], etc.)
+            elseif (strpos($key, 'image[') === 0) {
+                $filename = $this->extractFilename($key, $value);
+                $mimeType = $this->detectImageMimeType($value);
+                
+                $postData .= "Content-Disposition: form-data; name=\"{$key}\"; filename=\"{$filename}\"\r\n";
+                $postData .= "Content-Type: {$mimeType}\r\n\r\n";
+                $postData .= $value . "\r\n";
+            }
+            // Handle mask file
+            elseif ($key === 'mask') {
+                $postData .= "Content-Disposition: form-data; name=\"mask\"; filename=\"mask.png\"\r\n";
+                $postData .= "Content-Type: image/png\r\n\r\n";
+                $postData .= $value . "\r\n";
+            }
+            // Handle regular form fields
+            else {
                 $postData .= "Content-Disposition: form-data; name=\"{$key}\"\r\n\r\n";
                 $postData .= $value . "\r\n";
             }
@@ -150,6 +169,72 @@ abstract class AbstractProvider implements ProviderInterface
         $postData .= "--{$boundary}--\r\n";
         
         return $this->makePostRequest($url, $postData, $headers);
+    }
+
+    /**
+     * Extract filename from multipart field or generate default.
+     *
+     * @param   string  $fieldName  The form field name
+     * @param   string  $data       The file data
+     *
+     * @return  string  The filename
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function extractFilename(string $fieldName, string $data): string
+    {
+        $mimeType = $this->detectImageMimeType($data);
+        $extension = $this->getExtensionFromMimeType($mimeType);
+
+        if (strpos($fieldName, 'image[') === 0) {
+            $index = preg_replace('/[^0-9]/', '', $fieldName);
+            return "image_{$index}.{$extension}";
+        }
+
+        return "image.{$extension}";
+
+    }
+
+    /**
+     * Detect MIME type from image binary data.
+     *
+     * @param   string  $imageData  Binary image data
+     *
+     * @return  string  MIME type
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function detectImageMimeType(string $imageData): string
+    {
+        $header = substr($imageData, 0, 16);
+        
+        // PNG signature
+        if (substr($header, 0, 8) === "\x89PNG\r\n\x1a\n") {
+            return 'image/png';
+        }
+        
+        // JPEG signature
+        if (substr($header, 0, 2) === "\xFF\xD8") {
+            return 'image/jpeg';
+        }
+        
+        // WebP signature
+        if (substr($header, 0, 4) === 'RIFF' && substr($header, 8, 4) === 'WEBP') {
+            return 'image/webp';
+        }
+        
+        throw new \InvalidArgumentException('Unsupported image format. Only PNG, JPEG, and WebP are supported.');
+    }
+
+    protected function getExtensionFromMimeType(string $mimeType): string
+    {
+        switch ($mimeType) {
+            case 'image/jpeg':
+                return 'jpg';
+            case 'image/webp':
+                return 'webp';
+            case 'image/png':
+            default:
+                return 'png';
+        }
     }
 
     /**
