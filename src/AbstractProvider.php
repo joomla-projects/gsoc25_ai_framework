@@ -238,6 +238,28 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Get Content-Type header value from audio format.
+     *
+     * @param   string  $format  The audio format
+     *
+     * @return  string  The MIME type
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getContentTypeFromFormat(string $format): string
+    {
+        $formatMap = [
+            'mp3' => 'audio/mpeg',
+            'opus' => 'audio/opus',
+            'aac' => 'audio/aac',
+            'flac' => 'audio/flac',
+            'wav' => 'audio/wav',
+            'pcm' => 'audio/pcm'
+        ];
+
+        return $formatMap[$format];
+    }
+
+    /**
      * Check if a model is available with the provider.
      *
      * @param   string  $model           The model to check
@@ -300,6 +322,13 @@ abstract class AbstractProvider implements ProviderInterface
         }
     
         return true;
+    }
+
+    protected function isJsonResponse(string $responseBody): bool
+    {
+        // JSON responses start with { or [
+        $trimmed = ltrim($responseBody);
+        return !empty($trimmed) && ($trimmed[0] === '{' || $trimmed[0] === '[');
     }
 
     /**

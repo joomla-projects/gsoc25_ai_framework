@@ -10,17 +10,18 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ImageInterface;
-use Joomla\AI\Response\Response;
 use Joomla\AI\Interface\ModelInterface;
+use Joomla\AI\Response\Response;
 
 /**
  * OpenAI provider implementation for chat completions.
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface
+class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface, AudioInterface
 {
     /**
      * Default OpenAI API endpoint for chat completions
@@ -55,6 +56,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const IMAGE_VARIATIONS_ENDPOINT = 'https://api.openai.com/v1/images/variations';
 
     /**
+     * OpenAI API endpoint for audio speech synthesis
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
+
+    /**
      * Models that support chat capability.
      *
      * @var array
@@ -77,6 +86,30 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const IMAGE_MODELS = ['dall-e-2', 'dall-e-3', 'gpt-image-1'];
+
+    /**
+     * Models that support text-to-speech (TTS) capability.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const TTS_MODELS = ['gpt-4o-mini-tts',  'tts-1', 'tts-1-hd'];
+
+    /**
+     * Available voices for text-to-speech.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
+
+    /**
+     * Supported audio formats for OpenAI TTS.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const AUDIO_FORMATS = ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'];
 
     /**
      * Check if OpenAI provider is supported/configured.
@@ -154,6 +187,40 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Get available TTS models for this provider.
+     *
+     * @return  array  Array of available TTS model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getTTSModels(): array
+    {
+        $available = $this->getAvailableModels();
+        return $this->getModelsByCapability($available, self::TTS_MODELS);
+    }
+
+    /**
+     * Get available voices for speech generation.
+     *
+     * @return  array  Array of available voice names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getAvailableVoices(): array
+    {
+        return self::VOICES;
+    }
+
+    /**
+     * Get supported audio output formats.
+     *
+     * @return  array  Array of supported format names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getSupportedAudioFormats(): array
+    {
+        return self::AUDIO_FORMATS;
+    }
+
+    /**
      * Check if a specific model is supported by this provider.
      *
      * @param   string  $model  The model name to check
@@ -182,6 +249,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             'chat' => self::CHAT_MODELS,
             'vision' => self::VISION_MODELS,
             'image' => self::IMAGE_MODELS,
+            'text-to-speech' => self::TTS_MODELS,
         ];
         return $this->checkModelCapability($model, $capability, $capabilityMap);
     }
@@ -327,117 +395,29 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build the request payload for image variation request.
+     * Generate speech audio from text input.
      *
-     * @param   string  $imagePath  Path to the image file.
-     * @param   array   $options    Additional options for the request.
+     * @param   string  $text     The text to convert to speech
+     * @param   string  $model    The model to use for speech synthesis
+     * @param   string  $voice    The voice to use for speech synthesis
+     * @param   array   $options  Additional options for speech generation
      *
-     * @return  array  The form data for multipart request.
+     * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    private function buildImageVariationPayload(string $imagePath, array $options): array
+    public function speech(string $text, string $model, string $voice, array $options = []): Response    
     {
-        $model = $options['model'] ?? 'dall-e-2';
+        // To Do: Validate inputs
         
-        // Only dall-e-2 supports variations
-        if ($model !== 'dall-e-2') {
-            throw new \InvalidArgumentException("Model '$model' does not support image variations. Only dall-e-2 is supported.");
-        }
-        
-        $payload = [
-            'model' => $model,
-            'image' => file_get_contents($imagePath)
-        ];
-        
-        // To Do: Check additional optional parameters
-        if (isset($options['n'])) {
-            $n = (int) $options['n'];
-            if ($n < 1 || $n > 10) {
-                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
-            }
-            $payload['n'] = $n;
-        }
-        
-        if (isset($options['size'])) {
-            $validSizes = ['256x256', '512x512', '1024x1024'];
-            if (!in_array($options['size'], $validSizes)) {
-                throw new \InvalidArgumentException('Size must be one of: ' . implode(', ', $validSizes));
-            }
-            $payload['size'] = $options['size'];
-        }
-        
-        if (isset($options['response_format'])) {
-            $validFormats = ['url', 'b64_json'];
-            if (!in_array($options['response_format'], $validFormats)) {
-                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
-            }
-            $payload['response_format'] = $options['response_format'];
-        }
+        $payload = $this->buildSpeechPayload($text, $model, $voice, $options);
 
-        // To Do: Add optional parameters
-
-        return $payload;
-    }
-
-    /**
-     * Build payload for image editing request.
-     *
-     * @param   mixed   $images   Single image path or array of image paths
-     * @param   string  $prompt   Description of desired edits
-     * @param   array   $options  Additional options
-     *
-     * @return  array
-     * @since   __DEPLOY_VERSION__
-     */
-    private function buildImageEditPayload($images, string $prompt, array $options): array
-    {
-        $model = $options['model'] ?? 'dall-e-2';
-
-        // Only dall-e-2 and gpt-image-1 support image editing
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
-            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
-        }
-
-        $payload = [
-            'model' => $model,
-            'prompt' => $prompt
-        ];
+        //getEndpoint?
+        $headers = $this->buildHeaders();
+        $httpResponse = $this->makePostRequest(self::AUDIO_SPEECH_ENDPOINT, json_encode($payload), $headers);
         
-        // Handle images
-        if (is_string($images)) {
-            // Single image
-            $payload['image'] = file_get_contents($images);
-        } else {
-            // Multiple images (gpt-image-1)
-            foreach ($images as $index => $imagePath) {
-                $payload["image[{$index}]"] = file_get_contents($imagePath);
-            }
-        }
+        $this->validateResponse($httpResponse);
         
-        // Add mask if provided
-        if (isset($options['mask'])) {
-            $payload['mask'] = file_get_contents($options['mask']);
-        }
-
-        // To Do: Check additional optional parameters
-                
-        return $payload;
-    }
-
-    /**
-     * Build HTTP headers for multipart form data requests.
-     *
-     * @return  array  HTTP headers
-     * @since   __DEPLOY_VERSION__
-     */
-    private function buildMultipartHeaders(): array
-    {
-        $apiKey = $this->getApiKey();
-        
-        return [
-            'Authorization' => 'Bearer ' . $apiKey,
-            'User-Agent' => 'Joomla-AI-Framework'
-        ];
+        return $this->parseAudioResponse($httpResponse->body, $payload);
     }
 
     /**
@@ -606,6 +586,140 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         return $payload;
     }
+    
+    /**
+     * Build the request payload for image variation request.
+     *
+     * @param   string  $imagePath  Path to the image file.
+     * @param   array   $options    Additional options for the request.
+     *
+     * @return  array  The form data for multipart request.
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildImageVariationPayload(string $imagePath, array $options): array
+    {
+        $model = $options['model'] ?? 'dall-e-2';
+        
+        // Only dall-e-2 supports variations
+        if ($model !== 'dall-e-2') {
+            throw new \InvalidArgumentException("Model '$model' does not support image variations. Only dall-e-2 is supported.");
+        }
+        
+        $payload = [
+            'model' => $model,
+            'image' => file_get_contents($imagePath)
+        ];
+        
+        // To Do: Check additional optional parameters
+        if (isset($options['n'])) {
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 10) {
+                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+            }
+            $payload['n'] = $n;
+        }
+        
+        if (isset($options['size'])) {
+            $validSizes = ['256x256', '512x512', '1024x1024'];
+            if (!in_array($options['size'], $validSizes)) {
+                throw new \InvalidArgumentException('Size must be one of: ' . implode(', ', $validSizes));
+            }
+            $payload['size'] = $options['size'];
+        }
+        
+        if (isset($options['response_format'])) {
+            $validFormats = ['url', 'b64_json'];
+            if (!in_array($options['response_format'], $validFormats)) {
+                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+            }
+            $payload['response_format'] = $options['response_format'];
+        }
+
+        // To Do: Add optional parameters
+
+        return $payload;
+    }
+
+    /**
+     * Build payload for image editing request.
+     *
+     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string  $prompt   Description of desired edits
+     * @param   array   $options  Additional options
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildImageEditPayload($images, string $prompt, array $options): array
+    {
+        $model = $options['model'] ?? 'dall-e-2';
+
+        // Only dall-e-2 and gpt-image-1 support image editing
+        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
+            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
+        }
+
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt
+        ];
+        
+        // Handle images
+        if (is_string($images)) {
+            // Single image
+            $payload['image'] = file_get_contents($images);
+        } else {
+            // Multiple images (gpt-image-1)
+            foreach ($images as $index => $imagePath) {
+                $payload["image[{$index}]"] = file_get_contents($imagePath);
+            }
+        }
+        
+        // Add mask if provided
+        if (isset($options['mask'])) {
+            $payload['mask'] = file_get_contents($options['mask']);
+        }
+
+        // To Do: Check additional optional parameters
+                
+        return $payload;
+    }
+
+    /**
+     * Build request payload for text-to-speech (TTS) synthesis.
+     *
+     * @param   string  $text     The text to convert to speech
+     * @param   string  $model    The model to use for speech synthesis
+     * @param   string  $voice    The voice to use for speech synthesis
+     * @param   array   $options  Additional options for speech generation
+     *
+     * @return  array  The request payload.
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildSpeechPayload(string $text, string $model, string $voice, array $options): array
+    {
+        $payload = [
+            'input' => $text,
+            'model' => $model,
+            'voice' => $voice
+        ];
+        
+        // To Do: Add optional parameters
+        if (isset($options['response_format'])) {
+            $payload['response_format'] = $options['response_format'];
+        }
+        
+        if (isset($options['speed'])) {
+            $payload['speed'] = (float) $options['speed'];
+        }
+        
+        // Instructions only work with gpt-4o-mini-tts
+        if (isset($options['instructions']) && $model === 'gpt-4o-mini-tts') {
+            $payload['instructions'] = $options['instructions'];
+        }
+        
+        return $payload;
+    }
 
     /**
      * Get the API endpoint URL.
@@ -631,6 +745,22 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         return [
             'Authorization' => 'Bearer ' . $apiKey,
             'Content-Type' => 'application/json',
+            'User-Agent' => 'Joomla-AI-Framework'
+        ];
+    }
+
+    /**
+     * Build HTTP headers for multipart form data requests.
+     *
+     * @return  array  HTTP headers
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildMultipartHeaders(): array
+    {
+        $apiKey = $this->getApiKey();
+        
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
             'User-Agent' => 'Joomla-AI-Framework'
         ];
     }
@@ -779,6 +909,52 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         return new Response(
             $content,
+            $this->getName(),
+            $metadata,
+            200
+        );
+    }
+    
+    /**
+     * Parse OpenAI Audio API response into unified Response object.
+     *
+     * @param   string  $responseBody  The binary or JSON response body
+     * @param   array   $payload       The original request payload for metadata
+     * 
+     * @return  Response
+     * @since  __DEPLOY_VERSION__
+     */
+    private function parseAudioResponse(string $responseBody, array $payload): Response
+    {
+        
+        if ($this->isJsonResponse($responseBody)) {
+            $data = $this->parseJsonResponse($responseBody);
+            
+            if (isset($data['error'])) {
+                throw new \Exception(
+                    'OpenAI API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+                );
+            }
+        }
+        
+        $metadata = [
+            'model' => $payload['model'],
+            'voice' => $payload['voice'],
+            'format' => $payload['response_format'] ?? 'mp3',
+            'speed' => $payload['speed'] ?? 1.0,
+            'content_type' => $this->getContentTypeFromFormat($payload['response_format'] ?? 'mp3'),
+            'data_type' => 'binary_audio',
+            'size_bytes' => strlen($responseBody),
+            'created' => time()
+        ];
+        
+        // Add instructions if present (gpt-4o-mini-tts only)
+        if (isset($payload['instructions'])) {
+            $metadata['instructions'] = $payload['instructions'];
+        }
+
+        return new Response(
+            $responseBody, // Binary audio data
             $this->getName(),
             $metadata,
             200
