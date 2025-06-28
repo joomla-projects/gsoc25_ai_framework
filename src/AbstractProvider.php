@@ -118,7 +118,6 @@ abstract class AbstractProvider implements ProviderInterface
         return $response;
     }
 
-    
     /**
      * Make multipart HTTP POST request.
      *
@@ -136,16 +135,40 @@ abstract class AbstractProvider implements ProviderInterface
         
         $postData = '';
         foreach ($data as $key => $value) {
+            // Handle metadata fields
+            if (in_array($key, ['_filename', '_filepath'])) {
+                continue;
+            }
+
             $postData .= "--{$boundary}\r\n";
-            
+
+            // Handle creating audio file object
+            if ($key === 'file' && isset($data['_filepath'])) {
+                $filepath = $data['_filepath'];
+                $filename = $data['_filename'];
+                $mimeType = $this->detectAudioMimeType($filepath);
+                
+                $fileResource = fopen($filepath, 'rb');
+                if (!$fileResource) {
+                    throw new \Exception("Cannot open file: $filepath");
+                }
+                
+                $postData .= "Content-Disposition: form-data; name=\"file\"; filename=\"{$filename}\"\r\n";
+                $postData .= "Content-Type: {$mimeType}\r\n\r\n";
+
+                $fileContent = stream_get_contents($fileResource);
+                fclose($fileResource);
+
+                $postData .= $fileContent . "\r\n";
+            }
             // Handle single image field
             // To do: Currently strict format for single image field
-            if ($key === 'image') {
+            elseif ($key === 'image') {
                 $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
                 $postData .= "Content-Type: image/png\r\n\r\n";
                 $postData .= $value . "\r\n";
             }
-            // Handle multiple image fields (image[0], image[1], etc.)
+            // Handle multiple image fields
             elseif (strpos($key, 'image[') === 0) {
                 $filename = $this->extractFilename($key, $value);
                 $mimeType = $this->detectImageMimeType($value);
@@ -167,7 +190,9 @@ abstract class AbstractProvider implements ProviderInterface
             }
         }
         $postData .= "--{$boundary}--\r\n";
-        
+
+        $headers['Content-Type'] = "multipart/form-data; boundary={$boundary}";
+
         return $this->makePostRequest($url, $postData, $headers);
     }
 
@@ -236,27 +261,37 @@ abstract class AbstractProvider implements ProviderInterface
                 return 'png';
         }
     }
-
+  
     /**
-     * Get Content-Type header value from audio format.
+     * Get audio MIME type from file path.
      *
-     * @param   string  $format  The audio format
+     * @param   string  $filepath  The file path
      *
      * @return  string  The MIME type
      * @since   __DEPLOY_VERSION__
      */
-    protected function getContentTypeFromFormat(string $format): string
+    protected function detectAudioMimeType(string $input): string
     {
-        $formatMap = [
+        if (strpos($input, '.') !== false && !in_array($input, ['mp3', 'wav', 'flac', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'webm', 'opus', 'aac', 'pcm'])) {
+            $input = strtolower(pathinfo($input, PATHINFO_EXTENSION));
+        }
+        
+        $mimeMap = [
             'mp3' => 'audio/mpeg',
+            'wav' => 'audio/wav',
+            'flac' => 'audio/flac',
+            'ogg' => 'audio/ogg',
+            'webm' => 'audio/webm',
+            'mp4' => 'audio/mp4',
+            'mpeg' => 'audio/mpeg',
+            'mpga' => 'audio/mpeg',
+            'm4a' => 'audio/mp4',
             'opus' => 'audio/opus',
             'aac' => 'audio/aac',
-            'flac' => 'audio/flac',
-            'wav' => 'audio/wav',
-            'pcm' => 'audio/pcm'
+            'pcm' => 'audio/pcm',
         ];
-
-        return $formatMap[$format];
+        
+        return $mimeMap[$input];
     }
 
     /**

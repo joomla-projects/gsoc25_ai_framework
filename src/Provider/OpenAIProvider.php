@@ -48,6 +48,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits';
 
     /**
+     * OpenAI API endpoint for audio transcription
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const AUDIO_TRANSCRIPTION_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
+
+    /**
      * OpenAI API endpoint for image variations
      * 
      * @var string
@@ -94,6 +102,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const TTS_MODELS = ['gpt-4o-mini-tts',  'tts-1', 'tts-1-hd'];
+    
+    /**
+     * Models that support audio transcription.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const TRANSCRIPTION_MODELS = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'];
 
     /**
      * Available voices for text-to-speech.
@@ -110,6 +126,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const AUDIO_FORMATS = ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'];
+
+    /**
+     * Supported input formats for transcription.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
 
     /**
      * Check if OpenAI provider is supported/configured.
@@ -199,6 +223,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Get available transcription models for this provider.
+     *
+     * @return  array  Array of available transcription model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getTranscriptionModels(): array
+    {
+        return self::TRANSCRIPTION_MODELS;
+    }
+
+    /**
      * Get available voices for speech generation.
      *
      * @return  array  Array of available voice names
@@ -218,6 +253,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     public function getSupportedAudioFormats(): array
     {
         return self::AUDIO_FORMATS;
+    }
+
+    /**
+     * Get supported audio input formats for transcription.
+     *
+     * @return  array  Array of supported input format names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getSupportedTranscriptionFormats(): array
+    {
+        return self::TRANSCRIPTION_INPUT_FORMATS;
     }
 
     /**
@@ -250,6 +296,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             'vision' => self::VISION_MODELS,
             'image' => self::IMAGE_MODELS,
             'text-to-speech' => self::TTS_MODELS,
+            'transcription' => self::TRANSCRIPTION_MODELS,
         ];
         return $this->checkModelCapability($model, $capability, $capabilityMap);
     }
@@ -418,6 +465,45 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->validateResponse($httpResponse);
         
         return $this->parseAudioResponse($httpResponse->body, $payload);
+    }
+
+    /**
+     * Transcribe audio into text.
+     *
+     * @param   string  $audioFile  Path to audio file
+     * @param   string  $model      The transcription model to use
+     * @param   array   $options    Additional options for transcription
+     *
+     * @return  Response  The AI response containing transcribed text
+     * @throws  \InvalidArgumentException  If inputs are invalid
+     * @throws  \Exception  If API request fails
+     * @since   __DEPLOY_VERSION__
+     */
+    public function transcribe(string $audioFile, string $model, array $options = []): Response
+    {
+        // To Do: Validate inputs
+        if (!file_exists($audioFile)) {
+            throw new \InvalidArgumentException("Audio file not found: $audioFile");
+        }
+        
+        $audioData = file_get_contents($audioFile);
+        if ($audioData === false) {
+            throw new \Exception("Failed to read audio file: $audioFile");
+        }
+        
+        $payload = $this->buildTranscriptionPayload($audioFile, $model, $options);
+        
+        $headers = $this->buildMultipartHeaders();
+        
+        $httpResponse = $this->makeMultipartPostRequest(
+            self::AUDIO_TRANSCRIPTION_ENDPOINT,
+            $payload,
+            $headers
+        );
+        
+        $this->validateResponse($httpResponse);
+
+        return $this->parseTranscriptionResponse($httpResponse->body, $payload);
     }
 
     /**
@@ -701,14 +787,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $payload = [
             'input' => $text,
             'model' => $model,
-            'voice' => $voice
+            'voice' => $voice,
+            'response_format' => $options['response_format'] ?? 'mp3',
         ];
         
-        // To Do: Add optional parameters
-        if (isset($options['response_format'])) {
-            $payload['response_format'] = $options['response_format'];
-        }
-        
+        // To Do: Add optional parameters 
         if (isset($options['speed'])) {
             $payload['speed'] = (float) $options['speed'];
         }
@@ -716,6 +799,35 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // Instructions only work with gpt-4o-mini-tts
         if (isset($options['instructions']) && $model === 'gpt-4o-mini-tts') {
             $payload['instructions'] = $options['instructions'];
+        }
+        
+        return $payload;
+    }
+
+    /**
+     * Build form data for transcription request.
+     *
+     * @param   string  $audioData  Binary audio data
+     * @param   string  $model      The transcription model
+     * @param   array   $options    Additional options
+     *
+     * @return  array   Form data for multipart request
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildTranscriptionPayload(string $audioData, string $model, array $options): array
+    {
+        $payload = [
+            'model' => $model,
+            'file' => $audioData,
+            '_filename' => basename($audioData),
+            '_filepath' => $audioData,
+            'response_format' => $options['response_format'] ?? 'json',
+
+        ];
+
+        // To Do: Add optional parameters
+        if (isset($options['language'])) {
+            $payload['language'] = $options['language'];
         }
         
         return $payload;
@@ -940,9 +1052,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $metadata = [
             'model' => $payload['model'],
             'voice' => $payload['voice'],
-            'format' => $payload['response_format'] ?? 'mp3',
+            'format' => $payload['response_format'],
             'speed' => $payload['speed'] ?? 1.0,
-            'content_type' => $this->getContentTypeFromFormat($payload['response_format'] ?? 'mp3'),
+            'content_type' => $this->detectAudioMimeType($payload['response_format']),
             'data_type' => 'binary_audio',
             'size_bytes' => strlen($responseBody),
             'created' => time()
@@ -955,6 +1067,87 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         return new Response(
             $responseBody, // Binary audio data
+            $this->getName(),
+            $metadata,
+            200
+        );
+    }
+
+    /**
+     * Parse OpenAI Transcription API response into unified Response object.
+     *
+     * @param   string  $responseBody  The JSON response body
+     * @param   string  $model         The model used for transcription
+     * @param   array   $options       Original request options
+     * 
+     * @return  Response  Unified response object
+     * @throws  \Exception  If response parsing fails
+     * @since   __DEPLOY_VERSION__
+     */
+    private function parseTranscriptionResponse(string $responseBody, array $payload): Response
+    {
+        $responseFormat = $payload['response_format'];
+        
+        switch ($responseFormat) {
+            case 'json':
+            case 'verbose_json':
+                $data = $this->parseJsonResponse($responseBody);
+                
+                if (isset($data['error'])) {
+                    throw new \Exception(
+                        'OpenAI Transcription API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+                    );
+                }
+                
+                $content = $data['text'] ?? '';
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => $responseFormat,
+                    'language' => $data['language'] ?? null,
+                    'duration' => $data['duration'] ?? null,
+                    'created' => time()
+                ];
+                
+                if (isset($data['usage'])) {
+                    $metadata['usage'] = $data['usage'];
+                }
+                
+                if ($responseFormat === 'verbose_json' && isset($data['segments'])) {
+                    $metadata['segments'] = $data['segments'];
+                }
+                
+                if (isset($data['words'])) {
+                    $metadata['words'] = $data['words'];
+                }
+                
+                break;
+                
+            case 'text':
+                $content = trim($responseBody);
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => 'text',
+                    'created' => time()
+                ];
+                break;
+                
+            case 'srt':
+            case 'vtt':
+                $content = $responseBody;
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => $responseFormat,
+                    'subtitle_format' => $responseFormat,
+                    'created' => time()
+                ];
+                break;
+                
+            default:
+                throw new \Exception("Unsupported response format: $responseFormat");
+        }
+
+        return new Response(
+            $content,
             $this->getName(),
             $metadata,
             200
