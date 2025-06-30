@@ -72,6 +72,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
 
     /**
+     * OpenAI API endpoint for audio translation
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const AUDIO_TRANSLATION_ENDPOINT = 'https://api.openai.com/v1/audio/translations';
+
+    /**
      * Models that support chat capability.
      *
      * @var array
@@ -507,6 +515,35 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Translate audio to English text.
+     *
+     * @param   string  $audioFile  Path to audio file
+     * @param   string  $model      Model to use for translation
+     * @param   array   $options    Additional options
+     *
+     * @return  Response  Translation response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function translate(string $audioFile, string $model, array $options = []): Response
+    {
+        // To Do: Validate inputs
+
+        $formData = $this->buildTranslationFormData($audioFile, $model, $options);
+
+        $headers = $this->buildMultipartHeaders();
+
+        $httpResponse = $this->makeMultipartPostRequest(
+            self::AUDIO_TRANSLATION_ENDPOINT,
+            $formData,
+            $headers
+        );
+
+        $this->validateResponse($httpResponse);
+
+        return $this->parseTranslationResponse($httpResponse->body, $formData);
+    }
+
+    /**
      * Ask method - alias for chat/prompt for now
      *
      * @param   string  $question  The question to ask
@@ -818,11 +855,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         $payload = [
             'model' => $model,
-            'file' => $audioData,
+            'file' => null,
             '_filename' => basename($audioData),
             '_filepath' => $audioData,
             'response_format' => $options['response_format'] ?? 'json',
-
         ];
 
         // To Do: Add optional parameters
@@ -831,6 +867,34 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
         
         return $payload;
+    }
+
+    /**
+     * Build form data for translation request.
+     * 
+     * @param   string  $audioFile  Path to the audio file
+     * @param   string  $model      The translation model to use
+     * @param   array   $options    Additional options for translation
+     */
+    private function buildTranslationFormData(string $audioFile, string $model, array $options): array
+    {
+        $formData = [
+            'model' => $model,
+            'file' => null,
+            '_filename' => basename($audioFile),
+            '_filepath' => $audioFile,
+            'response_format' => $options['response_format'] ?? 'json',
+        ];
+        
+        if (isset($options['prompt'])) {
+            $formData['prompt'] = $options['prompt'];
+        }
+        
+        if (isset($options['temperature'])) {
+            $formData['temperature'] = (float) $options['temperature'];
+        }
+        
+        return $formData;
     }
 
     /**
@@ -1076,9 +1140,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     /**
      * Parse OpenAI Transcription API response into unified Response object.
      *
-     * @param   string  $responseBody  The JSON response body
-     * @param   string  $model         The model used for transcription
-     * @param   array   $options       Original request options
+     * @param   string  $responseBody  The response body
+     * @param   array   $payload       The original request payload for metadata
      * 
      * @return  Response  Unified response object
      * @throws  \Exception  If response parsing fails
@@ -1138,6 +1201,82 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                     'model' => $payload['model'],
                     'response_format' => $responseFormat,
                     'subtitle_format' => $responseFormat,
+                    'created' => time()
+                ];
+                break;
+                
+            default:
+                throw new \Exception("Unsupported response format: $responseFormat");
+        }
+
+        return new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            200
+        );
+    }
+
+    /**
+     * Parse OpenAI Translation API response into unified Response object.
+     *
+     * @param   string  $responseBody  The response body
+     * @param   array   $payload       The original request payload for metadata
+     * 
+     * @return  Response  Unified response object
+     * @throws  \Exception  If response parsing fails
+     * @since   __DEPLOY_VERSION__
+     */
+    private function parseTranslationResponse(string $responseBody, array $payload): Response
+    {
+        //To Do: Remove repetition
+        $responseFormat = $payload['response_format'];
+        $content = '';
+        $metadata = [];
+        
+        switch ($responseFormat) {
+            case 'json':
+            case 'verbose_json':
+                $data = $this->parseJsonResponse($responseBody);
+                
+                if (isset($data['error'])) {
+                    throw new \Exception(
+                        'OpenAI Translation API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+                    );
+                }
+                
+                $content = $data['text'] ?? '';
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => $responseFormat,
+                    'created' => time()
+                ];
+                
+                if (isset($data['usage'])) {
+                    $metadata['usage'] = $data['usage'];
+                }
+                
+                if ($responseFormat === 'verbose_json' && isset($data['segments'])) {
+                    $metadata['segments'] = $data['segments'];
+                }
+                
+                break;
+                
+            case 'text':
+                $content = trim($responseBody);
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => 'text',
+                    'created' => time()
+                ];
+                break;
+                
+            case 'srt':
+            case 'vtt':
+                $content = $responseBody;
+                $metadata = [
+                    'model' => $payload['model'],
+                    'response_format' => $responseFormat,
                     'created' => time()
                 ];
                 break;
