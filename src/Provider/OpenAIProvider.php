@@ -80,6 +80,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const AUDIO_TRANSLATION_ENDPOINT = 'https://api.openai.com/v1/audio/translations';
 
     /**
+     * OpenAI API endpoint for embeddings
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const EMBEDDINGS_ENDPOINT = 'https://api.openai.com/v1/embeddings';
+
+    /**
      * Models that support chat capability.
      *
      * @var array
@@ -110,6 +118,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const TTS_MODELS = ['gpt-4o-mini-tts',  'tts-1', 'tts-1-hd'];
+
+    /**
+     * Models that support text embeddings creating capability.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const EMBEDDING_MODELS = ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'];
     
     /**
      * Models that support audio transcription.
@@ -242,6 +258,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
+     * Get available embedding models for this provider.
+     *
+     * @return  array  Array of available embedding model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getEmbeddingModels(): array
+    {
+        return self::EMBEDDING_MODELS;
+    }
+
+    /**
      * Get available voices for speech generation.
      *
      * @return  array  Array of available voice names
@@ -305,6 +332,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             'image' => self::IMAGE_MODELS,
             'text-to-speech' => self::TTS_MODELS,
             'transcription' => self::TRANSCRIPTION_MODELS,
+            'embedding' => self::EMBEDDING_MODELS,
         ];
         return $this->checkModelCapability($model, $capability, $capabilityMap);
     }
@@ -541,6 +569,35 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->validateResponse($httpResponse);
 
         return $this->parseTranslationResponse($httpResponse->body, $formData);
+    }
+
+    /**
+     * Create embeddings for the given input text(s).
+     *
+     * @param   string|array  $input    Text string or array of texts to embed
+     * @param   string        $model    The embedding model to use
+     * @param   array         $options  Additional options
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function createEmbeddings($input, string $model, array $options = []): Response
+    {
+        // To Do: Validate inputs
+
+        $payload = $this->buildEmbeddingPayload($input, $model, $options);
+
+        $headers = $this->buildHeaders();
+
+        $httpResponse = $this->makePostRequest(
+            self::EMBEDDINGS_ENDPOINT,
+            json_encode($payload),
+            $headers
+        );
+
+        $this->validateResponse($httpResponse);
+
+        return $this->parseEmbeddingResponse($httpResponse->body, $payload);
     }
 
     /**
@@ -895,6 +952,36 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
         
         return $formData;
+    }
+
+    
+    /**
+     * Build request payload for embeddings.
+     *
+     * @param   string|array  $input    Text input(s) to embed
+     * @param   string        $model    The embedding model to use
+     * @param   array         $options  Additional options
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildEmbeddingPayload($input, string $model, array $options): array
+    {
+        $payload = [
+            'input' => $input,
+            'model' => $model,
+            'encoding_format' => $options['encoding_format'] ?? 'float'
+        ];
+
+        if (isset($options['dimensions']) && in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
+            $payload['dimensions'] = (int) $options['dimensions'];
+        }
+
+        if (isset($options['user'])) {
+            $payload['user'] = $options['user'];
+        }
+
+        return $payload;
     }
 
     /**
@@ -1283,6 +1370,64 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 
             default:
                 throw new \Exception("Unsupported response format: $responseFormat");
+        }
+
+        return new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            200
+        );
+    }
+
+    /**
+     * Parse OpenAI Embeddings API response into unified Response object.
+     *
+     * @param   string  $responseBody  The JSON response body
+     * @param   array   $payload       The original request payload for metadata
+     * 
+     * @return  Response
+     * @since  __DEPLOY_VERSION__
+     */
+    private function parseEmbeddingResponse(string $responseBody, array $payload): Response
+    {
+        $data = $this->parseJsonResponse($responseBody);
+        
+        if (isset($data['error'])) {
+            throw new \Exception(
+                'OpenAI Embeddings API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+            );
+        }
+
+        $embeddings = [];
+        if (isset($data['data']) && is_array($data['data'])) {
+            foreach ($data['data'] as $embeddingData) {
+                $embeddings[] = [
+                    'embedding' => $embeddingData['embedding'],
+                    'index' => $embeddingData['index'],
+                    'object' => $embeddingData['object']
+                ];
+            }
+        }
+
+        $contentData = count($embeddings) === 1 ? $embeddings[0]['embedding'] : $embeddings;
+        $content = json_encode($contentData);
+
+        $metadata = [
+            'model' => $data['model'],
+            'object' => $data['object'],
+            'embedding_count' => count($embeddings),
+            'encoding_format' => $payload['encoding_format'],
+            'input_type' => is_array($payload['input']) ? 'array' : 'string',
+            'raw_embeddings' => $embeddings,
+        ];
+
+        if (isset($data['usage'])) {
+            $metadata['usage'] = $data['usage'];
+        }
+
+        if (isset($payload['dimensions'])) {
+            $metadata['requested_dimensions'] = $payload['dimensions'];
         }
 
         return new Response(
