@@ -15,6 +15,7 @@ use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Response\Response;
+use Joomla\Http\HttpFactory;
 
 /**
  * OpenAI provider implementation for chat completions.
@@ -24,68 +25,20 @@ use Joomla\AI\Response\Response;
 class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface, AudioInterface
 {
     /**
+     * Custom base URL for API requests
+     * 
+     * @var string
+     * @since  __DEPLOY_VERSION__
+     */
+    private $baseUrl;
+
+    /**
      * Default OpenAI API endpoint for chat completions
      * 
      * @var string
      * @since  __DEPLOY_VERSION__
      */
     private const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-
-    /**
-     * OpenAI API endpoint for image generation
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations';
-
-    /**
-     * OpenAI API endpoint for image editing
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits';
-
-    /**
-     * OpenAI API endpoint for audio transcription
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const AUDIO_TRANSCRIPTION_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
-
-    /**
-     * OpenAI API endpoint for image variations
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_VARIATIONS_ENDPOINT = 'https://api.openai.com/v1/images/variations';
-
-    /**
-     * OpenAI API endpoint for audio speech synthesis
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
-
-    /**
-     * OpenAI API endpoint for audio translation
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const AUDIO_TRANSLATION_ENDPOINT = 'https://api.openai.com/v1/audio/translations';
-
-    /**
-     * OpenAI API endpoint for embeddings
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const EMBEDDINGS_ENDPOINT = 'https://api.openai.com/v1/embeddings';
 
     /**
      * Models that support chat capability.
@@ -160,6 +113,23 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
 
     /**
+     * Constructor.
+     *
+     * @param   array|\ArrayAccess  $options     Provider options array.
+     * @param   HttpFactory         $httpFactory The http factory
+     * 
+     * @since  __DEPLOY_VERSION__
+     */
+    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
+    {
+        parent::__construct($options, $httpFactory);
+        
+        $this->baseUrl = $this->getOption('base_url', 'https://api.openai.com/v1');
+        
+        // Remove trailing slash if present
+    }
+
+    /**
      * Check if OpenAI provider is supported/configured.
      *
      * @return  boolean  True if API key is available
@@ -180,6 +150,94 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     public function getName(): string
     {
         return 'OpenAI';
+    }
+
+    /**
+    * Get the chat completions endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getChatEndpoint(): string
+    {
+        return $this->baseUrl . '/chat/completions';
+    }
+
+    /**
+    * Get the image generation endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getImageEndpoint(): string
+    {
+        return $this->baseUrl . '/images/generations';
+    }
+
+    /**
+    * Get the image edit endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getImageEditEndpoint(): string
+    {
+        return $this->baseUrl . '/images/edits';
+    }
+
+    /**
+    * Get the image variations endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getImageVariationsEndpoint(): string
+    {
+        return $this->baseUrl . '/images/variations';
+    }
+
+    /**
+    * Get the audio speech endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getAudioSpeechEndpoint(): string
+    {
+        return $this->baseUrl . '/audio/speech';
+    }
+
+    /**
+    * Get the audio transcription endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getAudioTranscriptionEndpoint(): string
+    {
+        return $this->baseUrl . '/audio/transcriptions';
+    }
+
+    /**
+    * Get the audio translation endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getAudioTranslationEndpoint(): string
+    {
+        return $this->baseUrl . '/audio/translations';
+    }
+
+    /**
+    * Get the embeddings endpoint URL.
+    *
+    * @return  string  The endpoint URL
+    * @since  __DEPLOY_VERSION__
+    */
+    private function getEmbeddingsEndpoint(): string
+    {
+        return $this->baseUrl . '/embeddings';
     }
 
     /**
@@ -351,7 +409,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $requestData = $this->buildChatRequestPayload($message, $options, 'chat');
 
         // To Do: Remove repetition 
-        $endpoint = $this->getEndpoint();
+        $endpoint = $this->getChatEndpoint();
         $headers = $this->buildHeaders();
         
         $httpResponse = $this->makePostRequest(
@@ -380,7 +438,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $requestData = $this->buildVisionRequestPayload($message, $image, $options, 'vision');
         
-        $endpoint = $this->getEndpoint();
+        $endpoint = $this->getChatEndpoint();
         $headers = $this->buildHeaders();
         
         $httpResponse = $this->makePostRequest(
@@ -410,7 +468,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildHeaders();
         
         $httpResponse = $this->makePostRequest(
-            self::IMAGE_ENDPOINT, 
+            $this->getImageEndpoint(), 
             json_encode($requestData), 
             $headers
         );
@@ -438,7 +496,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
-            self::IMAGE_VARIATIONS_ENDPOINT, 
+            $this->getImageVariationsEndpoint(), 
             $formData, 
             $headers
         );
@@ -467,8 +525,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
-            self::IMAGE_EDIT_ENDPOINT, 
-            $formData, 
+            $this->getImageEditEndpoint(),
+            $formData,
             $headers
         );
         
@@ -494,10 +552,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $payload = $this->buildSpeechPayload($text, $model, $voice, $options);
 
-        //getEndpoint?
+        $endpoint = $this->getAudioSpeechEndpoint();
         $headers = $this->buildHeaders();
-        $httpResponse = $this->makePostRequest(self::AUDIO_SPEECH_ENDPOINT, json_encode($payload), $headers);
-        
+        $httpResponse = $this->makePostRequest($endpoint, json_encode($payload), $headers);
+
         $this->validateResponse($httpResponse);
         
         return $this->parseAudioResponse($httpResponse->body, $payload);
@@ -532,7 +590,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
-            self::AUDIO_TRANSCRIPTION_ENDPOINT,
+            $this->getAudioTranscriptionEndpoint(),
             $payload,
             $headers
         );
@@ -561,7 +619,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildMultipartHeaders();
 
         $httpResponse = $this->makeMultipartPostRequest(
-            self::AUDIO_TRANSLATION_ENDPOINT,
+            $this->getAudioTranslationEndpoint(),
             $formData,
             $headers
         );
@@ -590,7 +648,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildHeaders();
 
         $httpResponse = $this->makePostRequest(
-            self::EMBEDDINGS_ENDPOINT,
+            $this->getEmbeddingsEndpoint(),
             json_encode($payload),
             $headers
         );
@@ -982,17 +1040,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
 
         return $payload;
-    }
-
-    /**
-     * Get the API endpoint URL.
-     *
-     * @return  string  The endpoint URL
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getEndpoint(): string
-    {
-        return $this->getOption('endpoint', self::DEFAULT_ENDPOINT);
     }
 
     /**
