@@ -22,7 +22,9 @@ try {
         'base_url' => $base_url
     ]);
 
-    // Test 1: Basic Image Generation
+    // ====================================================================
+    // TEST 1: Basic Image Generation
+    // ====================================================================
     echo "Test 1: Basic Image Generation\n";
     echo str_repeat("-", 40) . "\n";
     
@@ -95,6 +97,40 @@ try {
     $transparentImage = saveBase64Image($transparentResponse->getContent(), 'edited_transparent.png');
     echo "Transparent background edit successful!\n";
     echo "Saved: edited_transparent.png ({$transparentImage} bytes)\n\n";
+
+    echo "\n" . str_repeat("=", 50) . "\n";
+    sleep(15); // Simulate some delay before next test
+
+    // ====================================================================
+    // TEST 4: Test model with multiple images
+    // ====================================================================
+    echo "Test 4: Test model with multiple images\n";
+    echo str_repeat("-", 40) . "\n";
+
+    // Use existing generated images from previous tests
+    $existingImages = ['test1_basic_sea_otter.png', 'edited_transparent.png'];
+
+    if (file_exists($existingImages[0]) && file_exists($existingImages[1])) {
+        echo "Using existing images for multiple edit test:\n";
+        echo "- " . $existingImages[0] . "\n";
+        echo "- " . $existingImages[1] . "\n";
+
+        $response = $provider->editImage(
+            $existingImages,
+            'Combine these images into an artistic collage',
+            [
+                'model' => 'gpt-image-1',
+            ]
+        );
+
+        echo "Image generation successful!\n\n";        
+        $image = saveBase64Image($response->getContent(), 'multi_image_test.png');
+        echo "\nImage saved: multi_image_test.png\n";
+
+        echo "\n" . str_repeat("=", 50) . "\n";
+    } else {
+        echo "No existing images found. Run the basic generation tests first.\n";
+    }
 
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";

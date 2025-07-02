@@ -907,10 +907,19 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             // Single image
             $payload['image'] = file_get_contents($images);
         } else {
-            // Multiple images (gpt-image-1)
-            foreach ($images as $index => $imagePath) {
-                $payload["image[{$index}]"] = file_get_contents($imagePath);
+            // Multiple images for gpt-image-1 model
+            if ($model !== 'gpt-image-1') {
+                throw new \InvalidArgumentException("Multiple images only supported with gpt-image-1 model");
             }
+            
+            $imageArray = [];
+            foreach ($images as $imagePath) {
+                if (!file_exists($imagePath)) {
+                    throw new \InvalidArgumentException("Image file not found: $imagePath");
+                }
+                $imageArray[] = file_get_contents($imagePath);
+            }
+            $payload['image'] = $imageArray;
         }
         
         // Add mask if provided

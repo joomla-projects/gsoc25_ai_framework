@@ -131,16 +131,13 @@ abstract class AbstractProvider implements ProviderInterface
     protected function makeMultipartPostRequest(string $url, array $data, array $headers): \Joomla\Http\Response
     {
         $boundary = '----aiframeworkjoomla-boundary-' . uniqid();
-        $headers['Content-Type'] = 'multipart/form-data; boundary=' . $boundary;
-        
         $postData = '';
+
         foreach ($data as $key => $value) {
             // Handle metadata fields
             if (in_array($key, ['_filename', '_filepath'])) {
                 continue;
             }
-
-            $postData .= "--{$boundary}\r\n";
 
             // Handle creating audio file object
             if ($key === 'file' && isset($data['_filepath'])) {
@@ -153,6 +150,7 @@ abstract class AbstractProvider implements ProviderInterface
                     throw new \Exception("Cannot open file: $filepath");
                 }
                 
+                $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"file\"; filename=\"{$filename}\"\r\n";
                 $postData .= "Content-Type: {$mimeType}\r\n\r\n";
 
@@ -161,30 +159,33 @@ abstract class AbstractProvider implements ProviderInterface
 
                 $postData .= $fileContent . "\r\n";
             }
-            // Handle single image field
-            // To do: Currently strict format for single image field
+            // To do: Currently strict format
             elseif ($key === 'image') {
-                $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
-                $postData .= "Content-Type: image/png\r\n\r\n";
-                $postData .= $value . "\r\n";
-            }
-            // Handle multiple image fields
-            elseif (strpos($key, 'image[') === 0) {
-                $filename = $this->extractFilename($key, $value);
-                $mimeType = $this->detectImageMimeType($value);
-                
-                $postData .= "Content-Disposition: form-data; name=\"{$key}\"; filename=\"{$filename}\"\r\n";
-                $postData .= "Content-Type: {$mimeType}\r\n\r\n";
-                $postData .= $value . "\r\n";
+                if (is_array($value)) {
+                    foreach ($value as $index => $imageData) {
+                        $postData .= "--{$boundary}\r\n";
+                        $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image{$index}.png\"\r\n";
+                        $postData .= "Content-Type: image/png\r\n\r\n";
+                        $postData .= $imageData . "\r\n";
+                    }
+                } else {
+                    // Single image
+                    $postData .= "--{$boundary}\r\n";
+                    $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
+                    $postData .= "Content-Type: image/png\r\n\r\n";
+                    $postData .= $value . "\r\n";
+                }
             }
             // Handle mask file
             elseif ($key === 'mask') {
+                $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"mask\"; filename=\"mask.png\"\r\n";
                 $postData .= "Content-Type: image/png\r\n\r\n";
                 $postData .= $value . "\r\n";
             }
             // Handle regular form fields
             else {
+                $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"{$key}\"\r\n\r\n";
                 $postData .= $value . "\r\n";
             }
