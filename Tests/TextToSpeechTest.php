@@ -4,7 +4,9 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz'; // Replace with your actual OpenAI API key
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     $provider = new OpenAIProvider([
@@ -34,9 +36,9 @@ try {
     
     // Save audio to file
     $audioData = $response->getContent();
-    file_put_contents('speech_test_1.mp3', $audioData);
-    echo "Audio saved as 'speech_test_1.mp3'\n\n";
-    
+    file_put_contents('output/speech_test_1.mp3', $audioData);
+    echo "Audio saved as 'output/speech_test_1.mp3'\n\n";
+
     echo str_repeat("=", 50) . "\n\n";
 
     // Test 2: Different Voice and Format
@@ -63,9 +65,9 @@ try {
     
     // Save WAV file
     $audioData2 = $response2->getContent();
-    file_put_contents('speech_test_2.wav', $audioData2);
-    echo "Audio saved as 'speech_test_2.wav'\n\n";
-    
+    file_put_contents('output/speech_test_2.wav', $audioData2);
+    echo "Audio saved as 'output/speech_test_2.wav'\n\n";
+
     echo str_repeat("=", 50) . "\n\n";
 
     // Test 3: GPT-4o-mini-tts Model with Instructions
@@ -94,8 +96,8 @@ try {
     
     // Save audio file
     $audioData3 = $response3->getContent();
-    file_put_contents('speech_test_3.mp3', $audioData3);
-    echo "Audio saved as 'speech_test_3.mp3'\n\n";
+    file_put_contents('output/speech_test_3.mp3', $audioData3);
+    echo "Audio saved as 'output/speech_test_3.mp3'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";
 

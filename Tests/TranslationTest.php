@@ -4,7 +4,9 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz';
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     echo "=== OpenAI Audio Translation Test ===\n\n";
@@ -13,16 +15,16 @@ try {
         'api_key' => $api_key
     ]);
 
-    echo "Step 0: Creating Test Audio File (french)\n";
+    echo "Step 0: Creating Test Audio File (german)\n";
     echo "----------------------------------------\n";
     
-    // Create a french test audio file using TTS
-    $testText = "Bonjour le monde. Ceci est un test de la fonctionnalité de traduction OpenAI. Nous testons la conversion de parole en texte en anglais.";
+    // Create a german test audio file using TTS
+    $testText = "Hallo, hiermit testen wir die Übersetzungsfunktion von OpenAI. Audio wird ins Englische übersetzt. Wir geben die Dateien und das zu verwendende Modell ein; aktuell ist nur Whisper-1 verfügbar. Ein optionaler Text dient zur Orientierung des Modells oder zur Fortsetzung eines vorherigen Audiosegments. Die Eingabeaufforderung sollte auf Englisch sein. Das Ausgabeformat kann in einer der folgenden Optionen gewählt werden: JSON, Text, SRT, Verbose_JSON oder VTT. Wir hoffen, dies funktioniert.";
     
     $speechResponse = $provider->speech($testText, 'tts-1', 'alloy', ['response_format' => 'wav']);
     $audioData = $speechResponse->getContent();
-    file_put_contents('test_french_audio.wav', $audioData);
-    echo "Audio file created: test_french_audio.wav\n\n";
+    file_put_contents('test_files/test_german_audio.wav', $audioData);
+    echo "Audio file created: test_files/test_german_audio.wav\n\n";
 
     echo str_repeat("=", 60) . "\n\n";
     
@@ -30,7 +32,7 @@ try {
     echo "Test 1: Basic Translation (JSON Format)\n";
     echo "---------------------------------------\n";
 
-    $testAudioFile = 'test_french_audio.wav';
+    $testAudioFile = 'test_files/test_german_audio.wav';
 
     $response1 = $provider->translate($testAudioFile, 'whisper-1');
     

@@ -4,7 +4,9 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz';
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     $provider = new OpenAIProvider([
@@ -20,8 +22,8 @@ try {
 
     $speechResponse = $provider->speech($testText, 'tts-1', 'alloy', ['response_format' => 'wav']);
     $audioData = $speechResponse->getContent();
-    file_put_contents('test_audio.wav', $audioData);
-    echo "Audio file created: test_audio.wav (" . strlen($audioData) . " bytes)\n\n";
+    file_put_contents('test_files/test_audio.wav', $audioData);
+    echo "Audio file created: test_files/test_audio.wav (" . strlen($audioData) . " bytes)\n\n";
     
     echo str_repeat("=", 60) . "\n\n";
 
@@ -30,7 +32,7 @@ try {
     echo "---------------------------------------\n";
     
     $model = 'whisper-1';
-    $audioFile = 'test_audio.wav';
+    $audioFile = 'test_files/test_audio.wav';
     
     echo "Audio File: $audioFile\n";
     
@@ -74,7 +76,7 @@ try {
                 echo "Content: \"" . trim($content) . "\"\n";
             } else {
                 $filename = "transcription_test.$format";
-                file_put_contents($filename, $content);
+                file_put_contents("output/$filename", $content);
                 echo "Saved as: $filename\n";
             }
             

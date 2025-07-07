@@ -4,14 +4,16 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz'; // Replace with your actual OpenAI API key
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     $provider = new OpenAIProvider([
         'api_key' => $api_key
     ]);
 
-    $imagePath = 'fish.png';
+    $imagePath = 'test_files/fish.png';
     
     $variationOptions = [
         'model' => 'dall-e-2',

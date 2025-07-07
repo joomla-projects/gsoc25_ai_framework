@@ -4,7 +4,9 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz';
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     echo "=== OpenAI Embeddings Test ===\n\n";

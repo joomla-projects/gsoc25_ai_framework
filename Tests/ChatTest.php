@@ -1,17 +1,14 @@
 <?php
 
 require_once '../vendor/autoload.php';
-// require_once '../src/ProviderInterface.php';
-// require_once '../src/Response.php';
-// require_once '../src/AbstractProvider.php';
-// require_once '../src/Provider/OpenAIProvider.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
 echo "Testing Real OpenAI API Calls...\n\n";
 
-// Replace 'xyz' with your actual OpenAI API key
-$api_key = 'xyz'; // Set your OpenAI API key here
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     // Create provider with your API key
@@ -29,7 +26,7 @@ try {
 
     // Test 1: Simple prompt
     echo "Test 1: Simple prompt...\n";
-    $response = $provider->prompt("Hello, how are you?");
+    $response = $provider->chat("Hello! How are you?");
 
     echo "API call successful!\n";
     echo "Response: " . $response->getContent() . "\n";

@@ -11,6 +11,7 @@ namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
 use Joomla\AI\Interface\ProviderInterface;
+use Joomla\AI\Interface\ModerationInterface;
 
 /**
  * Abstract provider class.
@@ -41,7 +42,7 @@ abstract class AbstractProvider implements ProviderInterface
      * @param   array|\ArrayAccess  $options  Provider options array.
      * @param   HttpFactory   $httpFactory  The http factory
      * 
-     * @throws  \InvalidArgumentException  If options is not an array or does not implement ArrayAccess.
+     * @throws  \InvalidArgumentException
      * @since  ___DEPLOY_VERSION___
      */
     public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
@@ -385,5 +386,25 @@ abstract class AbstractProvider implements ProviderInterface
         }
         
         return $decoded;
+    }
+
+    /**
+     * Apply moderation to the input if the provider implements ModerationInterface.
+     *
+     * @param   string|array  $input    The input to moderate (text or images)
+     * @param   array         $options  Additional options for moderation
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function moderateInput($input, array $options = []): bool
+    {
+        // Check if the provider supports moderation
+        if (!($this instanceof ModerationInterface)) {
+            return false;
+        }
+
+        $moderationResult = $this->moderate($input, $options);
+        return $this->isContentFlagged($moderationResult);
     }
 }

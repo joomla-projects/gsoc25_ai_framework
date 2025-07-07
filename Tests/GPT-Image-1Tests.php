@@ -4,8 +4,10 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz';
-$base_url = 'Custom URL here'; // Set your custom base URL here
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['gpt_image_model_key'];
+$base_url = $config['openai_base_url'];
 
 function saveBase64Image($base64Data, $filename) {
     $imageData = base64_decode($base64Data);
@@ -16,7 +18,6 @@ function saveBase64Image($base64Data, $filename) {
 try {
     echo "=== GPT-Image-1 Tests ===\n\n";
     
-    // Configure provider with custom base URL
     $provider = new OpenAIProvider([
         'api_key' => $api_key,
         'base_url' => $base_url
@@ -32,7 +33,6 @@ try {
         "A cute baby sea otter floating on its back in crystal clear water, photorealistic style",
         [
             'model' => 'gpt-image-1',
-            'size' => '1024x1024'
         ]
     );
     
@@ -45,11 +45,11 @@ try {
     echo "Format: " . ($metadata['response_format'] ?? 'base64') . "\n";
     echo "Provider: " . $response->getProvider() . "\n";
     
-    $image = saveBase64Image($response->getContent(), 'test1_basic_sea_otter.png');
-    echo "\nImage saved: test1_basic_sea_otter.png\n";
+    $image = saveBase64Image($response->getContent(), 'output/test1_basic_sea_otter.png');
+    echo "\nImage saved: output/test1_basic_sea_otter.png\n";
 
     echo "\n" . str_repeat("=", 50) . "\n";
-    sleep(15); // Simulate some delay before next test
+    sleep(15);
 
     // ====================================================================
     // TEST 2: Single Image Edit
@@ -58,7 +58,7 @@ try {
     echo str_repeat("-", 40) . "\n";
     
     $editResponse1 = $provider->editImage(
-        'fish.png',
+        'test_files/fish.png',
         'Change the colour of the fish to green',
         [
             'model' => 'gpt-image-1',
@@ -70,9 +70,9 @@ try {
     echo "Single image edit successful!\n";
     echo "Model: " . ($metadata1['model'] ?? 'unknown') . "\n";
     echo "Output format: " . ($metadata1['output_format'] ?? 'unknown') . "\n";
-    
-    $edit1 = saveBase64Image($editResponse1->getContent(), 'edited_fish.png');
-    echo "Saved: edited_fish.png ({$edit1} bytes)\n";
+
+    $edit1 = saveBase64Image($editResponse1->getContent(), 'output/edited_fish.png');
+    echo "Saved: output/edited_fish.png ({$edit1} bytes)\n";
 
     echo "\n" . str_repeat("=", 50) . "\n";
     sleep(15); // Simulate some delay before next test
@@ -84,7 +84,7 @@ try {
     echo str_repeat("-", 40) . "\n";
     
     $transparentResponse = $provider->editImage(
-        'fish.png',
+        'test_files/fish.png',
         'Extract the main subject and remove the background, creating a clean isolated object suitable for logos',
         [
             'model' => 'gpt-image-1',
@@ -93,10 +93,10 @@ try {
             'size' => '1024x1024'
         ]
     );
-    
-    $transparentImage = saveBase64Image($transparentResponse->getContent(), 'edited_transparent.png');
+
+    $transparentImage = saveBase64Image($transparentResponse->getContent(), 'output/edited_transparent.png');
     echo "Transparent background edit successful!\n";
-    echo "Saved: edited_transparent.png ({$transparentImage} bytes)\n\n";
+    echo "Saved: output/edited_transparent.png ({$transparentImage} bytes)\n\n";
 
     echo "\n" . str_repeat("=", 50) . "\n";
     sleep(15); // Simulate some delay before next test
@@ -108,7 +108,7 @@ try {
     echo str_repeat("-", 40) . "\n";
 
     // Use existing generated images from previous tests
-    $existingImages = ['test1_basic_sea_otter.png', 'edited_transparent.png'];
+    $existingImages = ['output/test1_basic_sea_otter.png', 'output/edited_transparent.png'];
 
     if (file_exists($existingImages[0]) && file_exists($existingImages[1])) {
         echo "Using existing images for multiple edit test:\n";
@@ -124,8 +124,8 @@ try {
         );
 
         echo "Image generation successful!\n\n";        
-        $image = saveBase64Image($response->getContent(), 'multi_image_test.png');
-        echo "\nImage saved: multi_image_test.png\n";
+        $image = saveBase64Image($response->getContent(), 'output/multi_image_test.png');
+        echo "\nImage saved: output/multi_image_test.png\n";
 
         echo "\n" . str_repeat("=", 50) . "\n";
     } else {

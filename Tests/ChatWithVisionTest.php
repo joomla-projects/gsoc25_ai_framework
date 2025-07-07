@@ -6,8 +6,9 @@ use Joomla\AI\Provider\OpenAIProvider;
 
 echo "Testing OpenAI Vision API Calls...\n\n";
 
-// Replace 'xyz' with your actual OpenAI API key
-$api_key = 'xyz'; // Set your OpenAI API key here
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     // Create provider with your API key

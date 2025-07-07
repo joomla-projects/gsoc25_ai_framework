@@ -14,6 +14,7 @@ use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
+use Joomla\AI\Interface\ModerationInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -22,7 +23,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface, AudioInterface
+class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInterface, ImageInterface, AudioInterface, ModerationInterface
 {
     /**
      * Custom base URL for API requests
@@ -89,6 +90,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const TRANSCRIPTION_MODELS = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'];
 
     /**
+     * Models that support content moderation.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const MODERATION_MODELS = ['omni-moderation-latest', 'text-moderation-007'];
+
+    /**
      * Available voices for text-to-speech.
      *
      * @var array
@@ -111,6 +120,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @since  __DEPLOY_VERSION__
      */
     private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
+
+    /**
+     * Content moderation categories recognized by OpenAI.
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private const MODERATION_CATEGORIES = ['harassment', 'harassment/threatening', 'hate', 'hate/threatening', 'illicit', 'illicit/violent', 'self-harm', 'self-harm/intent', 'self-harm/instructions', 'sexual', 'sexual/minors', 'violence', 'violence/graphic'];    
 
     /**
      * Constructor.
@@ -238,6 +255,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private function getEmbeddingsEndpoint(): string
     {
         return $this->baseUrl . '/embeddings';
+    }
+        
+    /**
+     * Get the content moderation endpoint URL.
+     *
+     * @return  string  The endpoint URL
+     * @since  __DEPLOY_VERSION__
+     */
+    private function getModerationEndpoint(): string
+    {
+        return $this->baseUrl . '/moderations';
     }
 
     /**
@@ -406,6 +434,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function chat(string $message, array $options = []): Response
     {
+        // Apply moderation to the chat message
+        $isBlocked = $this->moderateInput($message, []);
+        
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
+
         $requestData = $this->buildChatRequestPayload($message, $options, 'chat');
 
         // To Do: Remove repetition 
@@ -435,6 +470,16 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function chatWithVision(string $message, string $image, array $options = []): Response
     {
+        // Apply moderation to the input (text + image)
+        $multiModalInput = [
+            ['type' => 'text', 'text' => $message],
+            ['type' => 'image_url', 'image_url' => ['url' => $image]]
+        ];
+        $isBlocked = $this->moderateInput($multiModalInput, []);
+        
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
         
         $requestData = $this->buildVisionRequestPayload($message, $image, $options, 'vision');
         
@@ -463,6 +508,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function generateImage(string $prompt, array $options = []): Response
     {
+        // Apply moderation to the image generation prompt
+        $isBlocked = $this->moderateInput($prompt, []);
+        
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
+
         $requestData = $this->buildImageRequestPayload($prompt, $options, 'image');
         
         $headers = $this->buildHeaders();
@@ -518,8 +570,15 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function editImage($images, string $prompt, array $options = []): Response
     {
-        // To Do: Validate inputs
+        // To Do: Validate image inputs
+        // Apply moderation to the image editing prompt
+        $isBlocked = $this->moderateInput($prompt, []);
+        
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
 
+        // To Do: Validate inputs
         $formData = $this->buildImageEditPayload($images, $prompt, $options);
         
         $headers = $this->buildMultipartHeaders();
@@ -549,7 +608,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     public function speech(string $text, string $model, string $voice, array $options = []): Response    
     {
         // To Do: Validate inputs
+        // Apply moderation to the text input for speech generation
+        $isBlocked = $this->moderateInput($text, []);
         
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
+
+        // To Do: Validate inputs
         $payload = $this->buildSpeechPayload($text, $model, $voice, $options);
 
         $endpoint = $this->getAudioSpeechEndpoint();
@@ -641,8 +707,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function createEmbeddings($input, string $model, array $options = []): Response
     {
-        // To Do: Validate inputs
+        // Apply moderation to the text input for embeddings
+        $isBlocked = $this->moderateInput($input, []);
+        
+        if ($isBlocked) {
+            throw new \Exception('Content flagged by moderation system and blocked.');
+        }
 
+        // To Do: Validate inputs
         $payload = $this->buildEmbeddingPayload($input, $model, $options);
 
         $headers = $this->buildHeaders();
@@ -656,6 +728,62 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->validateResponse($httpResponse);
 
         return $this->parseEmbeddingResponse($httpResponse->body, $payload);
+    }
+
+    /**
+     * Moderate content using OpenAI's moderation endpoint.
+     *
+     * @param   string|array  $input    Text/Image input(s) to moderate
+     * @param   array         $options  Additional options for moderation
+     *
+     * @return  array
+     * @throws  \Exception
+     * @since   __DEPLOY_VERSION__
+     */
+    public function moderate($input, array $options = []): array
+    {
+        $model = $options['model'] ?? 'omni-moderation-latest';
+        
+        if (!in_array($model, self::MODERATION_MODELS)) {
+            throw new \InvalidArgumentException("Unsupported moderation model: $model");
+        }
+
+        $payload = [
+            'input' => $input,
+            'model' => $model
+        ];
+
+        $headers = $this->buildHeaders();
+
+        $httpResponse = $this->makePostRequest(
+            $this->getModerationEndpoint(),
+            json_encode($payload),
+            $headers
+        );
+
+        $this->validateResponse($httpResponse);
+
+        $data = $this->parseJsonResponse($httpResponse->body);
+
+        return $data;
+    }
+
+    /**
+     * Check if content is flagged by OpenAI moderation.
+     *
+     * @param   array  $moderationResult  Result from moderate() method
+     *
+     * @return  bool
+     * @throws  \InvalidArgumentException
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isContentFlagged(array $moderationResult): bool
+    {
+        if (!isset($moderationResult['results']) || empty($moderationResult['results'])) {
+            throw new \InvalidArgumentException('Invalid moderation result format');
+        }
+
+        return $moderationResult['results'][0]['flagged'] ?? false;
     }
 
     /**

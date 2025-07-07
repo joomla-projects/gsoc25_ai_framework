@@ -4,7 +4,9 @@ require_once '../vendor/autoload.php';
 
 use Joomla\AI\Provider\OpenAIProvider;
 
-$api_key = 'xyz';
+$configFile = __DIR__ . '/../config.json';
+$config = json_decode(file_get_contents($configFile), true);
+$api_key = $config['openai_api_key'] ?? null;
 
 try {
     $provider = new OpenAIProvider([
@@ -17,8 +19,8 @@ try {
     echo "Test 1: Single Image Edit with DALL-E 2\n";
     echo "----------------------------------------\n";
     
-    $imagePath = 'dog_img.png';
-    $maskImagePath = 'mask_dog_img.png'; // Mask image
+    $imagePath = 'test_files/dog_img.png';
+    $maskImagePath = 'test_files/mask_dog_img.png'; // Mask image
     $prompt = "picture of a dog and a rabbit";
 
     $editOptions = [
@@ -55,5 +57,5 @@ try {
     // Test b64_json response format
 
 } catch (Exception $e) {
-    echo "❌ Error: " . $e->getMessage() . "\n";
+    echo "Error: " . $e->getMessage() . "\n";
 }
