@@ -62,8 +62,4 @@ try {
     
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";
-    echo "This might be due to:\n";
-    echo "- Invalid API key\n";
-    echo "- Model doesn't support vision\n";
-    echo "- API quota exceeded\n";
 }

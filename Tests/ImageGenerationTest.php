@@ -29,8 +29,6 @@ try {
     echo "Provider: " . $response->getProvider() . "\n";
     $metadata = $response->getMetadata();
     echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
-    echo "Format: " . ($metadata['format'] ?? 'unknown') . "\n";
-    echo "Total images: " . ($metadata['total_images']) . "\n";
 
     if (isset($metadata['revised_prompt'])) {
         echo "Revised prompt: " . "\n";

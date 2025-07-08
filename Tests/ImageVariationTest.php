@@ -62,11 +62,7 @@ try {
                 echo "  Image " . ($index + 1) . " length: " . strlen($data) . " characters\n";
             }
         }
-    }
-    
-    // echo "\nRaw Metadata:\n";
-    // echo json_encode($metadata, JSON_PRETTY_PRINT) . "\n";
-    
+    } 
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";
 }

@@ -502,7 +502,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        $payload = $this->buildImageRequestPayload($prompt, $options, 'image');
+        $payload = $this->buildImageRequestPayload($prompt, $options);
         
         $headers = $this->buildHeaders();
         
@@ -528,8 +528,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function createImageVariation(string $imagePath, array $options = []): Response
     {
-        // To Do: Validate image file
-        
         $payload = $this->buildImageVariationPayload($imagePath, $options);
         
         $headers = $this->buildMultipartHeaders();
@@ -557,7 +555,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function editImage($images, string $prompt, array $options = []): Response
     {
-        // To Do: Validate image inputs
         // Apply moderation to the image editing prompt
         $isBlocked = $this->moderateInput($prompt, []);
         
@@ -565,7 +562,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        // To Do: Validate inputs
         $payload = $this->buildImageEditPayload($images, $prompt, $options);
         
         $headers = $this->buildMultipartHeaders();
@@ -885,29 +881,98 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  array  The request payload.
      * @since   __DEPLOY_VERSION__
      */
-    private function buildImageRequestPayload(string $prompt, array $options, string $capability): array
+    private function buildImageRequestPayload(string $prompt, array $options): array
     {
         $model = $options['model'] ?? 'dall-e-2';
 
-        if (!$this->isModelCapable($model, $capability)) {
-            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+        if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
+            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
         }
+
+        $this->validateImagePrompt($prompt, $model);
 
         $payload = [
             'model' => $model,
             'prompt' => $prompt
         ];
         
-        if (in_array($model, ['dall-e-2', 'dall-e-3'])) {
-            $responseFormat = $options['response_format'] ?? 'b64_json';
-            if (in_array($responseFormat, ['url', 'b64_json'])) {
-                $payload['response_format'] = $responseFormat;
-            } else {
-                throw new \InvalidArgumentException("Unsupported response format: $responseFormat");
+        // Add optional parameters based on model support
+        if (isset($options['n'])) {
+            $n = (int) $options['n'];
+            if ($model === 'dall-e-3' && $n !== 1) {
+                throw new \InvalidArgumentException('For dall-e-3, only n=1 is supported');
+            }
+            if ($n < 1 || $n > 10) {
+                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+            }
+            $payload['n'] = $n;
+        }
+        
+        if (isset($options['size'])) {
+            $this->validateImageSize($options['size'], $model, 'generation');
+            $payload['size'] = $options['size'];
+        }
+        
+        if (isset($options['quality'])) {
+            $this->validateImageQuality($options['quality'], $model);
+            $payload['quality'] = $options['quality'];
+        }
+        
+        if (isset($options['style'])) {
+            if ($model !== 'dall-e-3') {
+                throw new \InvalidArgumentException('Style parameter is only supported for dall-e-3');
+            }
+            if (!in_array($options['style'], ['vivid', 'natural'])) {
+                throw new \InvalidArgumentException('Style must be either "vivid" or "natural"');
+            }
+            $payload['style'] = $options['style'];
+        }
+        
+        if (isset($options['response_format'])) {
+            if ($model === 'gpt-image-1') {
+                throw new \InvalidArgumentException('response_format is not supported for gpt-image-1 (always returns base64)');
+            }
+            if (!in_array($options['response_format'], ['url', 'b64_json'])) {
+                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+            }
+            $payload['response_format'] = $options['response_format'];
+        }
+        
+        // gpt-image-1 specific parameters
+        if ($model === 'gpt-image-1') {
+            if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
+                throw new \InvalidArgumentException('Background must be one of: transparent, opaque, auto');
+            }
+            if (isset($options['background'])) {
+                $payload['background'] = $options['background'];
+            }
+            
+            if (isset($options['output_format'])) {
+                if (!in_array($options['output_format'], ['png', 'jpeg', 'webp'])) {
+                    throw new \InvalidArgumentException('Output format must be one of: png, jpeg, webp');
+                }
+                $payload['output_format'] = $options['output_format'];
+            }
+            
+            if (isset($options['output_compression'])) {
+                $compression = (int) $options['output_compression'];
+                if ($compression < 0 || $compression > 100) {
+                    throw new \InvalidArgumentException('Output compression must be between 0 and 100');
+                }
+                $payload['output_compression'] = $compression;
+            }
+            
+            if (isset($options['moderation']) && !in_array($options['moderation'], ['low', 'auto'])) {
+                throw new \InvalidArgumentException('Moderation must be either "low" or "auto"');
+            }
+            if (isset($options['moderation'])) {
+                $payload['moderation'] = $options['moderation'];
             }
         }
         
-        // To Do: Add optional parameters if provided
+        if (isset($options['user'])) {
+            $payload['user'] = $options['user'];
+        }
 
         return $payload;
     }
@@ -930,12 +995,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \InvalidArgumentException("Model '$model' does not support image variations. Only dall-e-2 is supported.");
         }
         
+        $this->validateImageFile($imagePath, $model, 'variation');
+        
         $payload = [
             'model' => $model,
             'image' => file_get_contents($imagePath)
         ];
         
-        // To Do: Check additional optional parameters
         if (isset($options['n'])) {
             $n = (int) $options['n'];
             if ($n < 1 || $n > 10) {
@@ -960,7 +1026,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $payload['response_format'] = $options['response_format'];
         }
 
-        // To Do: Add optional parameters
+        if (isset($options['user'])) {
+            $payload['user'] = $options['user'];
+        }
 
         return $payload;
     }
@@ -983,6 +1051,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
             throw new \InvalidArgumentException("Model '$model' does not support image editing.");
         }
+
+        $this->validateImageEditInputs($images, $prompt, $model, $options);
 
         $payload = [
             'model' => $model,
@@ -1011,11 +1081,67 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         // Add mask if provided
         if (isset($options['mask'])) {
+            $this->validateMaskFile($options['mask']);
             $payload['mask'] = file_get_contents($options['mask']);
         }
-
-        // To Do: Check additional optional parameters
-                
+        
+        if (isset($options['n'])) {
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 10) {
+                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+            }
+            $payload['n'] = $n;
+        }
+        
+        if (isset($options['size'])) {
+            $this->validateImageSize($options['size'], $model, 'edit');
+            $payload['size'] = $options['size'];
+        }
+        
+        if (isset($options['quality'])) {
+            $this->validateImageQuality($options['quality'], $model);
+            $payload['quality'] = $options['quality'];
+        }
+        
+        if (isset($options['response_format'])) {
+            if ($model === 'gpt-image-1') {
+                throw new \InvalidArgumentException('response_format is not supported for gpt-image-1 (always returns base64)');
+            }
+            if (!in_array($options['response_format'], ['url', 'b64_json'])) {
+                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+            }
+            $payload['response_format'] = $options['response_format'];
+        }
+        
+        // gpt-image-1 specific parameters
+        if ($model === 'gpt-image-1') {
+            if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
+                throw new \InvalidArgumentException('Background must be one of: transparent, opaque, auto');
+            }
+            if (isset($options['background'])) {
+                $payload['background'] = $options['background'];
+            }
+            
+            if (isset($options['output_format']) && !in_array($options['output_format'], ['png', 'jpeg', 'webp'])) {
+                throw new \InvalidArgumentException('Output format must be one of: png, jpeg, webp');
+            }
+            if (isset($options['output_format'])) {
+                $payload['output_format'] = $options['output_format'];
+            }
+            
+            if (isset($options['output_compression'])) {
+                $compression = (int) $options['output_compression'];
+                if ($compression < 0 || $compression > 100) {
+                    throw new \InvalidArgumentException('Output compression must be between 0 and 100');
+                }
+                $payload['output_compression'] = $compression;
+            }
+        }
+        
+        if (isset($options['user'])) {
+            $payload['user'] = $options['user'];
+        }
+        
         return $payload;
     }
 
@@ -1516,6 +1642,214 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $metadata,
             200
         );
+    }
+
+    /**
+     * Validate image prompt for generation and editing operations.
+     *
+     * @param   string  $prompt     The prompt to validate
+     * @param   string  $model      The model being used
+     *
+     * @return  void
+     * @throws  \InvalidArgumentException  If validation fails
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateImagePrompt(string $prompt, string $model): void
+    {
+        // Max lengths per model
+        $maxLengths = [
+            'gpt-image-1' => 32000,
+            'dall-e-2' => 1000,
+            'dall-e-3' => 4000
+        ];
+        
+        // Validate prompt length
+        if (isset($maxLengths[$model]) && strlen(trim($prompt)) > $maxLengths[$model]) {
+            throw new \InvalidArgumentException(
+                "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ({$maxLengths[$model]} characters)"
+            );
+        }
+    }
+
+    /**
+     * Validate inputs for image editing.
+     *
+     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string  $prompt   Description of desired edits
+     * @param   string  $model    The model to use
+     * @param   array   $options  Additional options
+     *
+     * @throws  \InvalidArgumentException  If inputs are invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateImageEditInputs($images, string $prompt, string $model, array $options): void
+    {
+        $this->validateImagePrompt($prompt, $model);
+        
+        // Validate images
+        if (is_string($images)) {
+            $this->validateImageFile($images, $model, 'edit');
+        } else {
+            if ($model !== 'gpt-image-1') {
+                throw new \InvalidArgumentException('Multiple images only supported with gpt-image-1 model');
+            }
+            
+            if (count($images) > 16) {
+                throw new \InvalidArgumentException('Maximum 16 images allowed for gpt-image-1');
+            }
+            
+            foreach ($images as $imagePath) {
+                $this->validateImageFile($imagePath, $model, 'edit');
+            }
+        }
+    }
+
+    /**
+     * Validate an image file.
+     *
+     * @param   string  $imagePath  Path to the image file
+     * @param   string  $model      The model being used
+     * @param   string  $operation  The operation
+     *
+     * @throws  \InvalidArgumentException  If file is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateImageFile(string $imagePath, string $model, string $operation): void
+    {
+        if (!file_exists($imagePath)) {
+            throw new \InvalidArgumentException("Image file not found: $imagePath");
+        }
+        
+        $fileSize = filesize($imagePath);
+        $fileInfo = pathinfo($imagePath);
+        $extension = strtolower($fileInfo['extension'] ?? '');
+        
+        if ($model === 'gpt-image-1') {
+            // gpt-image-1 supports png, webp, jpg, max 50MB
+            if (!in_array($extension, ['png', 'webp', 'jpg', 'jpeg'])) {
+                throw new \InvalidArgumentException("For gpt-image-1, image must be png, webp, or jpg. Got: $extension");
+            }
+            
+            if ($fileSize > 50 * 1024 * 1024) { // 50MB
+                throw new \InvalidArgumentException("For gpt-image-1, image must be less than 50MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+            }
+        } elseif ($model === 'dall-e-2') {
+            // dall-e-2 requires square PNG, max 4MB
+            if ($extension !== 'png') {
+                throw new \InvalidArgumentException("For dall-e-2, image must be a PNG file. Got: $extension");
+            }
+            
+            if ($fileSize > 4 * 1024 * 1024) { // 4MB
+                throw new \InvalidArgumentException("For dall-e-2, image must be less than 4MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+            }
+            
+            // Check if image is square (for variations)
+            if ($operation === 'variation') {
+                $imageInfo = getimagesize($imagePath);
+                if ($imageInfo === false) {
+                    throw new \InvalidArgumentException("Unable to read image dimensions from: $imagePath");
+                }
+                if ($imageInfo[0] !== $imageInfo[1]) {
+                    throw new \InvalidArgumentException("For dall-e-2 variations, image must be square. Current dimensions: {$imageInfo[0]}x{$imageInfo[1]}");
+                }
+            }
+        }
+    }
+
+    /**
+     * Validate a mask file.
+     *
+     * @param   string  $maskPath  Path to the mask file
+     *
+     * @throws  \InvalidArgumentException  If mask file is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateMaskFile(string $maskPath): void
+    {
+        if (!file_exists($maskPath)) {
+            throw new \InvalidArgumentException("Mask file not found: $maskPath");
+        }
+        
+        $fileSize = filesize($maskPath);
+        $fileInfo = pathinfo($maskPath);
+        $extension = strtolower($fileInfo['extension'] ?? '');
+        
+        if ($extension !== 'png') {
+            throw new \InvalidArgumentException("Mask must be a PNG file. Got: $extension");
+        }
+        
+        if ($fileSize > 4 * 1024 * 1024) { // 4MB
+            throw new \InvalidArgumentException("Mask must be less than 4MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+        }
+    }
+
+    /**
+     * Validate image size parameter.
+     *
+     * @param   string  $size       The size to validate
+     * @param   string  $model      The model being used
+     * @param   string  $operation  The operation (generation, edit, variation)
+     *
+     * @throws  \InvalidArgumentException  If size is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateImageSize(string $size, string $model, string $operation): void
+    {
+        $validSizes = [];
+        
+        switch ($model) {
+            case 'gpt-image-1':
+                $validSizes = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
+                break;
+                
+            case 'dall-e-2':
+                $validSizes = ['256x256', '512x512', '1024x1024'];
+                break;
+                
+            case 'dall-e-3':
+                $validSizes = ['1024x1024', '1792x1024', '1024x1792'];
+                break;
+        }
+        
+        if (!in_array($size, $validSizes)) {
+            throw new \InvalidArgumentException(
+                "Invalid size '$size' for model '$model' and operation '$operation'. Valid sizes: " . implode(', ', $validSizes)
+            );
+        }
+    }
+
+    /**
+     * Validate image quality parameter.
+     *
+     * @param   string  $quality  The quality to validate
+     * @param   string  $model    The model being used
+     *
+     * @throws  \InvalidArgumentException  If quality is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateImageQuality(string $quality, string $model): void
+    {
+        $validQualities = [];
+        
+        switch ($model) {
+            case 'gpt-image-1':
+                $validQualities = ['auto', 'high', 'medium', 'low'];
+                break;
+                
+            case 'dall-e-2':
+                $validQualities = ['standard'];
+                break;
+                
+            case 'dall-e-3':
+                $validQualities = ['auto', 'hd', 'standard'];
+                break;
+        }
+        
+        if (!in_array($quality, $validQualities)) {
+            throw new \InvalidArgumentException(
+                "Invalid quality '$quality' for model '$model'. Valid qualities: " . implode(', ', $validQualities)
+            );
+        }
     }
 
     /**
