@@ -34,14 +34,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private $baseUrl;
 
     /**
-     * Default OpenAI API endpoint for chat completions
-     * 
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-
-    /**
      * Models that support chat capability.
      *
      * @var array
@@ -122,14 +114,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
 
     /**
-     * Content moderation categories recognized by OpenAI.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const MODERATION_CATEGORIES = ['harassment', 'harassment/threatening', 'hate', 'hate/threatening', 'illicit', 'illicit/violent', 'self-harm', 'self-harm/intent', 'self-harm/instructions', 'sexual', 'sexual/minors', 'violence', 'violence/graphic'];    
-
-    /**
      * Constructor.
      *
      * @param   array|\ArrayAccess  $options     Provider options array.
@@ -144,6 +128,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $this->baseUrl = $this->getOption('base_url', 'https://api.openai.com/v1');
         
         // Remove trailing slash if present
+        if (substr($this->baseUrl, -1) === '/') {
+            $this->baseUrl = rtrim($this->baseUrl, '/');
+        }
     }
 
     /**
@@ -441,7 +428,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        $requestData = $this->buildChatRequestPayload($message, $options, 'chat');
+        $payload = $this->buildChatRequestPayload($message, $options, 'chat');
 
         // To Do: Remove repetition 
         $endpoint = $this->getChatEndpoint();
@@ -449,7 +436,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $httpResponse = $this->makePostRequest(
             $endpoint, 
-            json_encode($requestData), 
+            json_encode($payload), 
             $headers
         );
         
@@ -481,14 +468,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
         
-        $requestData = $this->buildVisionRequestPayload($message, $image, $options, 'vision');
+        $payload = $this->buildVisionRequestPayload($message, $image, $options, 'vision');
         
         $endpoint = $this->getChatEndpoint();
         $headers = $this->buildHeaders();
         
         $httpResponse = $this->makePostRequest(
             $endpoint, 
-            json_encode($requestData), 
+            json_encode($payload), 
             $headers
         );
         
@@ -515,13 +502,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        $requestData = $this->buildImageRequestPayload($prompt, $options, 'image');
+        $payload = $this->buildImageRequestPayload($prompt, $options, 'image');
         
         $headers = $this->buildHeaders();
         
         $httpResponse = $this->makePostRequest(
             $this->getImageEndpoint(), 
-            json_encode($requestData), 
+            json_encode($payload), 
             $headers
         );
         
@@ -543,13 +530,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         // To Do: Validate image file
         
-        $formData = $this->buildImageVariationPayload($imagePath, $options);
+        $payload = $this->buildImageVariationPayload($imagePath, $options);
         
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
             $this->getImageVariationsEndpoint(), 
-            $formData, 
+            $payload, 
             $headers
         );
         
@@ -579,13 +566,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
 
         // To Do: Validate inputs
-        $formData = $this->buildImageEditPayload($images, $prompt, $options);
+        $payload = $this->buildImageEditPayload($images, $prompt, $options);
         
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
             $this->getImageEditEndpoint(),
-            $formData,
+            $payload,
             $headers
         );
         
@@ -663,7 +650,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $this->validateResponse($httpResponse);
 
-        return $this->parseTranscriptionResponse($httpResponse->body, $payload);
+        return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Transcription');
     }
 
     /**
@@ -680,19 +667,19 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         // To Do: Validate inputs
 
-        $formData = $this->buildTranslationFormData($audioFile, $model, $options);
+        $payload = $this->buildTranslationPayload($audioFile, $model, $options);
 
         $headers = $this->buildMultipartHeaders();
 
         $httpResponse = $this->makeMultipartPostRequest(
             $this->getAudioTranslationEndpoint(),
-            $formData,
+            $payload,
             $headers
         );
 
         $this->validateResponse($httpResponse);
 
-        return $this->parseTranslationResponse($httpResponse->body, $formData);
+        return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Translation');
     }
 
     /**
@@ -787,35 +774,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Ask method - alias for chat/prompt for now
-     *
-     * @param   string  $question  The question to ask
-     * @param   array   $options   Additional options
-     * 
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
-     */
-    public function ask(string $question, array $options = []): Response
-    {
-        return $this->chat($question, $options);
-    }
-
-    /**
-     * Alias for chat/prompt for now.
-     *
-     * @param   string  $prompt   The prompt to send
-     * @param   array   $options  Additional options
-     * 
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
-     */
-    public function prompt(string $prompt, array $options = []): Response
-    {
-        return $this->chat($prompt, $options);
-    }
-
-    /**
-     * Build the request payload for OpenAI API.
+     * Build payload for chat request.
      *
      * @param   string  $message   The user message to send
      * @param   array   $options  Additional options
@@ -859,7 +818,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build the request payload for OpenAI API with vision capability.
+     * Build payload for vision request.
      *
      * @param   string  $message  The chat message about the image
      * @param   string  $image    Image URL or base64 encoded image
@@ -917,7 +876,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build request payload for image generation.
+     * Build payload for image generation request.
      *
      * @param   string  $prompt      The image generation prompt.
      * @param   array   $options     Additional options for the request.
@@ -954,7 +913,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
     
     /**
-     * Build the request payload for image variation request.
+     * Build payload for image variation request.
      *
      * @param   string  $imagePath  Path to the image file.
      * @param   array   $options    Additional options for the request.
@@ -1061,7 +1020,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build request payload for text-to-speech (TTS) synthesis.
+     * Build payload for text-to-speech request.
      *
      * @param   string  $text     The text to convert to speech
      * @param   string  $model    The model to use for speech synthesis
@@ -1094,7 +1053,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build form data for transcription request.
+     * Build payload for transcription request.
      *
      * @param   string  $audioData  Binary audio data
      * @param   string  $model      The transcription model
@@ -1122,15 +1081,15 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Build form data for translation request.
+     * Build payload for translation request.
      * 
      * @param   string  $audioFile  Path to the audio file
      * @param   string  $model      The translation model to use
      * @param   array   $options    Additional options for translation
      */
-    private function buildTranslationFormData(string $audioFile, string $model, array $options): array
+    private function buildTranslationPayload(string $audioFile, string $model, array $options): array
     {
-        $formData = [
+        $payload = [
             'model' => $model,
             'file' => null,
             '_filename' => basename($audioFile),
@@ -1139,14 +1098,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         ];
         
         if (isset($options['prompt'])) {
-            $formData['prompt'] = $options['prompt'];
+            $payload['prompt'] = $options['prompt'];
         }
         
         if (isset($options['temperature'])) {
-            $formData['temperature'] = (float) $options['temperature'];
+            $payload['temperature'] = (float) $options['temperature'];
         }
         
-        return $formData;
+        return $payload;
     }
 
     
@@ -1409,18 +1368,21 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     }
 
     /**
-     * Parse OpenAI Transcription API response into unified Response object.
+     * Parse OpenAI Audio API response (transcription/translation) into unified Response object.
      *
      * @param   string  $responseBody  The response body
      * @param   array   $payload       The original request payload for metadata
+     * @param   string  $apiType       Either ' Transcription' or 'Translation'
      * 
      * @return  Response  Unified response object
      * @throws  \Exception  If response parsing fails
      * @since   __DEPLOY_VERSION__
      */
-    private function parseTranscriptionResponse(string $responseBody, array $payload): Response
+    private function parseAudioTextResponse(string $responseBody, array $payload, string $apiType): Response
     {
         $responseFormat = $payload['response_format'];
+        $content = '';
+        $metadata = [];
         
         switch ($responseFormat) {
             case 'json':
@@ -1429,7 +1391,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 
                 if (isset($data['error'])) {
                     throw new \Exception(
-                        'OpenAI Transcription API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+                        "OpenAI $apiType API Error: " . ($data['error']['message'] ?? 'Unknown error')
                     );
                 }
                 
@@ -1437,13 +1399,20 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 $metadata = [
                     'model' => $payload['model'],
                     'response_format' => $responseFormat,
-                    'language' => $data['language'] ?? null,
-                    'duration' => $data['duration'] ?? null,
                     'created' => time()
                 ];
                 
                 if (isset($data['usage'])) {
                     $metadata['usage'] = $data['usage'];
+                }
+                
+                // Add language info for transcription
+                if ($apiType === 'Transcription' && isset($data['language'])) {
+                    $metadata['language'] = $data['language'];
+                }
+                
+                if (isset($data['duration'])) {
+                    $metadata['duration'] = $data['duration'];
                 }
                 
                 if ($responseFormat === 'verbose_json' && isset($data['segments'])) {
@@ -1471,85 +1440,12 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 $metadata = [
                     'model' => $payload['model'],
                     'response_format' => $responseFormat,
-                    'subtitle_format' => $responseFormat,
                     'created' => time()
                 ];
-                break;
                 
-            default:
-                throw new \Exception("Unsupported response format: $responseFormat");
-        }
-
-        return new Response(
-            $content,
-            $this->getName(),
-            $metadata,
-            200
-        );
-    }
-
-    /**
-     * Parse OpenAI Translation API response into unified Response object.
-     *
-     * @param   string  $responseBody  The response body
-     * @param   array   $payload       The original request payload for metadata
-     * 
-     * @return  Response  Unified response object
-     * @throws  \Exception  If response parsing fails
-     * @since   __DEPLOY_VERSION__
-     */
-    private function parseTranslationResponse(string $responseBody, array $payload): Response
-    {
-        //To Do: Remove repetition
-        $responseFormat = $payload['response_format'];
-        $content = '';
-        $metadata = [];
-        
-        switch ($responseFormat) {
-            case 'json':
-            case 'verbose_json':
-                $data = $this->parseJsonResponse($responseBody);
-                
-                if (isset($data['error'])) {
-                    throw new \Exception(
-                        'OpenAI Translation API Error: ' . ($data['error']['message'] ?? 'Unknown error')
-                    );
+                if ($apiType === 'Transcription') {
+                    $metadata['subtitle_format'] = $responseFormat;
                 }
-                
-                $content = $data['text'] ?? '';
-                $metadata = [
-                    'model' => $payload['model'],
-                    'response_format' => $responseFormat,
-                    'created' => time()
-                ];
-                
-                if (isset($data['usage'])) {
-                    $metadata['usage'] = $data['usage'];
-                }
-                
-                if ($responseFormat === 'verbose_json' && isset($data['segments'])) {
-                    $metadata['segments'] = $data['segments'];
-                }
-                
-                break;
-                
-            case 'text':
-                $content = trim($responseBody);
-                $metadata = [
-                    'model' => $payload['model'],
-                    'response_format' => 'text',
-                    'created' => time()
-                ];
-                break;
-                
-            case 'srt':
-            case 'vtt':
-                $content = $responseBody;
-                $metadata = [
-                    'model' => $payload['model'],
-                    'response_format' => $responseFormat,
-                    'created' => time()
-                ];
                 break;
                 
             default:

@@ -44,17 +44,5 @@ interface ProviderInterface
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */
-    public function prompt(string $prompt, array $options = []): Response;
-
-    // Does the same as prompt. Need to be checked if removed, or kept for option parameter
-    /**
-     * Ask a question to the AI provider and return a Response object with the response.
-     * 
-     * @param   string  $question     The question to send to the AI provider.
-     * @param   array   $options    An associative array of options to send with the request.
-     * 
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
-     */
-    public function ask(string $question, array $options = []): Response;
+    // public function prompt(string $prompt, array $options = []): Response;
 }
