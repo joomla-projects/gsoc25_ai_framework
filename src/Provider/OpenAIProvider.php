@@ -95,7 +95,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @var array
      * @since  __DEPLOY_VERSION__
      */
-    private const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
+    private const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
 
     /**
      * Supported audio formats for OpenAI TTS.
@@ -624,16 +624,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function transcribe(string $audioFile, string $model, array $options = []): Response
     {
-        // To Do: Validate inputs
-        if (!file_exists($audioFile)) {
-            throw new \InvalidArgumentException("Audio file not found: $audioFile");
-        }
-        
-        $audioData = file_get_contents($audioFile);
-        if ($audioData === false) {
-            throw new \Exception("Failed to read audio file: $audioFile");
-        }
-        
         $payload = $this->buildTranscriptionPayload($audioFile, $model, $options);
         
         $headers = $this->buildMultipartHeaders();
@@ -661,8 +651,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function translate(string $audioFile, string $model, array $options = []): Response
     {
-        // To Do: Validate inputs
-
         $payload = $this->buildTranslationPayload($audioFile, $model, $options);
 
         $headers = $this->buildMultipartHeaders();
@@ -886,7 +874,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $model = $options['model'] ?? 'dall-e-2';
 
         if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
-            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
+            throw new \InvalidArgumentException("Model '$model' does not support image generation.");
         }
 
         $this->validateImagePrompt($prompt, $model);
@@ -1158,21 +1146,59 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildSpeechPayload(string $text, string $model, string $voice, array $options): array
     {
+        // Validate input text
+        if (strlen($text) > 4096) {
+            throw new \InvalidArgumentException('Speech input text cannot exceed 4096 characters, got: ' . strlen($text));
+        }
+        
+        // Validate model
+        if (!in_array($model, self::TTS_MODELS)) {
+            throw new \InvalidArgumentException("Unsupported TTS model: $model. Supported models: " . implode(', ', self::TTS_MODELS));
+        }
+        
+        // Validate voice
+        if (!in_array($voice, self::VOICES)) {
+            throw new \InvalidArgumentException("Unsupported voice: $voice. Supported voices: " . implode(', ', self::VOICES));
+        }
+        
         $payload = [
             'input' => $text,
             'model' => $model,
-            'voice' => $voice,
-            'response_format' => $options['response_format'] ?? 'mp3',
+            'voice' => $voice
         ];
         
-        // To Do: Add optional parameters 
+        $responseFormat = $options['response_format'] ?? 'mp3';
+        if (!in_array($responseFormat, self::AUDIO_FORMATS)) {
+            throw new \InvalidArgumentException("Unsupported response format: $responseFormat. Supported formats: " . implode(', ', self::AUDIO_FORMATS));
+        }
+        $payload['response_format'] = $responseFormat;
+        
         if (isset($options['speed'])) {
-            $payload['speed'] = (float) $options['speed'];
+            $speed = (float) $options['speed'];
+            if ($speed < 0.25 || $speed > 4.0) {
+                throw new \InvalidArgumentException("Speed must be between 0.25 and 4.0, got: $speed");
+            }
+            $payload['speed'] = $speed;
         }
         
-        // Instructions only work with gpt-4o-mini-tts
-        if (isset($options['instructions']) && $model === 'gpt-4o-mini-tts') {
+        if (isset($options['instructions'])) {
+            if ($model !== 'gpt-4o-mini-tts') {
+                throw new \InvalidArgumentException("Instructions parameter is only supported with gpt-4o-mini-tts model");
+            }
+            if (!is_string($options['instructions']) || empty(trim($options['instructions']))) {
+                throw new \InvalidArgumentException("Instructions must be a non-empty string");
+            }
             $payload['instructions'] = $options['instructions'];
+        }
+        
+        if (isset($options['stream_format'])) {
+            if ($model !== 'gpt-4o-mini-tts') {
+                throw new \InvalidArgumentException("Stream format parameter is only supported with gpt-4o-mini-tts model");
+            }
+            if (!in_array($options['stream_format'], ['sse', 'audio'])) {
+                throw new \InvalidArgumentException("Stream format must be 'sse' or 'audio', got: " . $options['stream_format']);
+            }
+            $payload['stream_format'] = $options['stream_format'];
         }
         
         return $payload;
@@ -1181,26 +1207,106 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     /**
      * Build payload for transcription request.
      *
-     * @param   string  $audioData  Binary audio data
+     * @param   string  $audioFile  The audio file
      * @param   string  $model      The transcription model
      * @param   array   $options    Additional options
      *
      * @return  array   Form data for multipart request
+     * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function buildTranscriptionPayload(string $audioData, string $model, array $options): array
+    private function buildTranscriptionPayload(string $audioFile, string $model, array $options): array
     {
+        // Validate audio file
+        $this->validateAudioFile($audioFile);
+        
+        // Validate model
+        if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
+            throw new \InvalidArgumentException("Unsupported transcription model: $model. Supported models: " . implode(', ', self::TRANSCRIPTION_MODELS));
+        }
+        
         $payload = [
             'model' => $model,
             'file' => null,
-            '_filename' => basename($audioData),
-            '_filepath' => $audioData,
-            'response_format' => $options['response_format'] ?? 'json',
+            '_filename' => basename($audioFile),
+            '_filepath' => $audioFile,
         ];
-
-        // To Do: Add optional parameters
+        
+        $responseFormat = $options['response_format'] ?? 'json';
+        $validFormats = ['json', 'text', 'srt', 'verbose_json', 'vtt'];
+        
+        if (in_array($model, ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe'])) {
+            if ($responseFormat !== 'json') {
+                throw new \InvalidArgumentException("For $model, only 'json' response format is supported");
+            }
+        } elseif (!in_array($responseFormat, $validFormats)) {
+            throw new \InvalidArgumentException("Invalid response format: $responseFormat. Valid formats: " . implode(', ', $validFormats));
+        }
+        $payload['response_format'] = $responseFormat;
+        
         if (isset($options['language'])) {
             $payload['language'] = $options['language'];
+        }
+        
+        if (isset($options['prompt'])) {
+            $payload['prompt'] = $options['prompt'];
+        }
+        
+        if (isset($options['temperature'])) {
+            $temperature = (float) $options['temperature'];
+            if ($temperature < 0 || $temperature > 1) {
+                throw new \InvalidArgumentException("Temperature must be between 0 and 1, got: $temperature");
+            }
+            $payload['temperature'] = $temperature;
+        }
+        
+        if (isset($options['chunking_strategy'])) {
+            $payload['chunking_strategy'] = $options['chunking_strategy'];
+        }
+        
+        if (isset($options['include'])) {
+            if (!is_array($options['include'])) {
+                throw new \InvalidArgumentException("Include parameter must be an array");
+            }
+            $validIncludes = ['logprobs'];
+            foreach ($options['include'] as $include) {
+                if (!in_array($include, $validIncludes)) {
+                    throw new \InvalidArgumentException("Invalid include option: $include. Valid options: " . implode(', ', $validIncludes));
+                }
+            }
+            // logprobs only works with json format and specific models
+            if (in_array('logprobs', $options['include'])) {
+                if ($responseFormat !== 'json') {
+                    throw new \InvalidArgumentException("logprobs include option only works with 'json' response format");
+                }
+                if (!in_array($model, ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe'])) {
+                    throw new \InvalidArgumentException("logprobs include option only works with gpt-4o-transcribe and gpt-4o-mini-transcribe models");
+                }
+            }
+            $payload['include'] = $options['include'];
+        }
+        
+        if (isset($options['stream'])) {
+            if ($model === 'whisper-1') {
+                throw new \InvalidArgumentException("Streaming is not supported for whisper-1 model");
+            }
+            $payload['stream'] = (bool) $options['stream'];
+        }
+        
+        if (isset($options['timestamp_granularities'])) {
+            if ($responseFormat !== 'verbose_json') {
+                throw new \InvalidArgumentException("timestamp_granularities only works with 'verbose_json' response format");
+            }
+            if (!is_array($options['timestamp_granularities'])) {
+                throw new \InvalidArgumentException("timestamp_granularities must be an array");
+            }
+            $validGranularities = ['word', 'segment'];
+            foreach ($options['timestamp_granularities'] as $granularity) {
+                if (!in_array($granularity, $validGranularities)) {
+                    throw new \InvalidArgumentException("Invalid timestamp granularity: $granularity. Valid options: " . implode(', ', $validGranularities));
+                }
+            }
+            $payload['timestamp_granularities'] = $options['timestamp_granularities'];
         }
         
         return $payload;
@@ -1212,23 +1318,45 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @param   string  $audioFile  Path to the audio file
      * @param   string  $model      The translation model to use
      * @param   array   $options    Additional options for translation
+     *
+     * @return  array   Form data for multipart request
+     * @throws  \InvalidArgumentException  If parameters are invalid
+     * @since   __DEPLOY_VERSION__
      */
     private function buildTranslationPayload(string $audioFile, string $model, array $options): array
     {
+        // Validate audio file
+        $this->validateAudioFile($audioFile);
+        
+        // Validate model
+        if ($model !== 'whisper-1') {
+            throw new \InvalidArgumentException("Translation only supports whisper-1 model, got: $model");
+        }
+        
         $payload = [
             'model' => $model,
             'file' => null,
             '_filename' => basename($audioFile),
             '_filepath' => $audioFile,
-            'response_format' => $options['response_format'] ?? 'json',
         ];
+        
+        $responseFormat = $options['response_format'] ?? 'json';
+        $validFormats = ['json', 'text', 'srt', 'verbose_json', 'vtt'];
+        if (!in_array($responseFormat, $validFormats)) {
+            throw new \InvalidArgumentException("Invalid response format: $responseFormat. Valid formats: " . implode(', ', $validFormats));
+        }
+        $payload['response_format'] = $responseFormat;
         
         if (isset($options['prompt'])) {
             $payload['prompt'] = $options['prompt'];
         }
         
         if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
+            $temperature = (float) $options['temperature'];
+            if ($temperature < 0 || $temperature > 1) {
+                throw new \InvalidArgumentException("Temperature must be between 0 and 1, got: $temperature");
+            }
+            $payload['temperature'] = $temperature;
         }
         
         return $payload;
@@ -1243,18 +1371,40 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @param   array         $options  Additional options
      *
      * @return  array
+     * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
     private function buildEmbeddingPayload($input, string $model, array $options): array
     {
+        // Validate model
+        if (!in_array($model, self::EMBEDDING_MODELS)) {
+            throw new \InvalidArgumentException("Unsupported embedding model: $model");
+        }
+        
         $payload = [
             'input' => $input,
-            'model' => $model,
-            'encoding_format' => $options['encoding_format'] ?? 'float'
+            'model' => $model
         ];
 
-        if (isset($options['dimensions']) && in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
-            $payload['dimensions'] = (int) $options['dimensions'];
+        $encodingFormat = $options['encoding_format'] ?? 'float';
+        if (!in_array($encodingFormat, ['float', 'base64'])) {
+            throw new \InvalidArgumentException("Encoding format must be 'float' or 'base64', got: $encodingFormat");
+        }
+        $payload['encoding_format'] = $encodingFormat;
+
+        if (isset($options['dimensions'])) {
+            if (!in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
+                throw new \InvalidArgumentException("Dimensions parameter is only supported for text-embedding-3-large and text-embedding-3-small models");
+            }
+            
+            $dimensions = (int) $options['dimensions'];
+            $maxDimensions = $model === 'text-embedding-3-large' ? 3072 : 1536;
+            
+            if ($dimensions < 1 || $dimensions > $maxDimensions) {
+                throw new \InvalidArgumentException("Dimensions must be between 1 and $maxDimensions for $model");
+            }
+            
+            $payload['dimensions'] = $dimensions;
         }
 
         if (isset($options['user'])) {
@@ -1848,6 +1998,44 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (!in_array($quality, $validQualities)) {
             throw new \InvalidArgumentException(
                 "Invalid quality '$quality' for model '$model'. Valid qualities: " . implode(', ', $validQualities)
+            );
+        }
+    }
+
+    /**
+     * Validate audio file according to OpenAI API requirements.
+     *
+     * @param   string  $audioFile  Path to the audio file
+     *
+     * @throws  \InvalidArgumentException  If audio file is invalid
+     * @throws  \Exception  If file cannot be read
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateAudioFile(string $audioFile): void
+    {
+        if (!file_exists($audioFile)) {
+            throw new \InvalidArgumentException("Audio file not found: $audioFile");
+        }
+        
+        $audioData = file_get_contents($audioFile);
+        if ($audioData === false) {
+            throw new \Exception("Failed to read audio file: $audioFile");
+        }
+        
+        $fileInfo = pathinfo($audioFile);
+        $extension = strtolower($fileInfo['extension'] ?? '');
+        
+        if (!in_array($extension, self::TRANSCRIPTION_INPUT_FORMATS)) {
+            throw new \InvalidArgumentException(
+                "Unsupported audio format: $extension. Supported formats: " . implode(', ', self::TRANSCRIPTION_INPUT_FORMATS)
+            );
+        }
+        
+        // Check file size (OpenAI has a 25MB limit for audio files)
+        $fileSize = filesize($audioFile);
+        if ($fileSize > 25 * 1024 * 1024) { // 25MB
+            throw new \InvalidArgumentException(
+                "Audio file too large. Maximum size is 25MB, got: " . round($fileSize / 1024 / 1024, 2) . "MB"
             );
         }
     }
