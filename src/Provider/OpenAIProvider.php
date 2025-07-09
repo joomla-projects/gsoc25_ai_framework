@@ -775,27 +775,99 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
         }
 
-        $payload = [
-            'model' => $model,
-            'messages' => [
+        if (isset($options['messages'])) {
+            $messages = $options['messages'];
+            if (!is_array($messages) || empty($messages)) {
+                throw new \InvalidArgumentException('Messages must be a non-empty array');
+            }
+            $this->validateMessages($messages);
+        } else {
+            $messages = [
                 [
                     'role' => 'user',
                     'content' => $message
                 ]
-            ]
+            ];
+        }
+
+        $payload = [
+            'model' => $model,
+            'messages' => $messages
         ];
 
-        // To Do: Add optional parameters if provided
+        // Handle modalities parameter
+        if (isset($options['modalities'])) {
+            if (!is_array($options['modalities'])) {
+                throw new \InvalidArgumentException('Modalities must be an array');
+            }
+            
+            $validModalities = ['text', 'audio'];
+            foreach ($options['modalities'] as $modality) {
+                if (!in_array($modality, $validModalities)) {
+                    throw new \InvalidArgumentException("Invalid modality '$modality'. Valid modalities: " . implode(', ', $validModalities));
+                }
+            }
+            
+            // Audio modality requires gpt-4o-audio-preview model
+            if (in_array('audio', $options['modalities']) && $model !== 'gpt-4o-audio-preview') {
+                throw new \InvalidArgumentException('Audio modality requires gpt-4o-audio-preview model');
+            }
+            
+            $payload['modalities'] = $options['modalities'];
+        }
+
+        // Handle audio output parameters
+        if (isset($options['audio'])) {
+            // Audio output requires audio modality
+            if (!is_array($options['audio']) || !isset($payload['modalities']) || !in_array('audio', $payload['modalities'])) {
+                throw new \InvalidArgumentException('Audio output parameter must be an array and requires modalities to include "audio"');
+            }
+            
+            $audioParams = [];
+            
+            // Validate and set audio format
+            if (!isset($options['audio']['format'])) {
+                throw new \InvalidArgumentException('Audio format is required when audio output is requested');
+            }
+            
+            $validAudioFormats = ['wav', 'mp3', 'flac', 'opus', 'pcm16'];
+            if (!in_array($options['audio']['format'], $validAudioFormats)) {
+                throw new \InvalidArgumentException('Audio format must be one of: ' . implode(', ', $validAudioFormats));
+            }
+            $audioParams['format'] = $options['audio']['format'];
+            
+            // Validate and set voice
+            if (!isset($options['audio']['voice'])) {
+                throw new \InvalidArgumentException('Audio voice is required when audio output is requested');
+            }
+            
+            $validVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
+            if (!in_array($options['audio']['voice'], $validVoices)) {
+                throw new \InvalidArgumentException('Audio voice must be one of: ' . implode(', ', $validVoices));
+            }
+            $audioParams['voice'] = $options['audio']['voice'];
+            
+            $payload['audio'] = $audioParams;
+        }
+
+        if (isset($options['n'])) {
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 128) {
+                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 128');
+            }
+            $payload['n'] = $n;
+        }
+
+        if (isset($options['stream'])) {
+            $payload['stream'] = (bool) $options['stream'];
+        }
+
         if (isset($options['max_tokens'])) {
             $payload['max_tokens'] = (int) $options['max_tokens'];
         }
 
         if (isset($options['temperature'])) {
             $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['n'])) {
-            $payload['n'] = (int) $options['n'];
         }
 
         return $payload;
@@ -1792,6 +1864,35 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $metadata,
             200
         );
+    }
+
+    /**
+     * Basic validation for messages array
+     *
+     * @param   array   $messages  Array of messages to validate
+     *
+     * @throws  \InvalidArgumentException  If basic structure is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateMessages(array $messages): void
+    {
+        $validRoles = ['developer', 'system', 'user', 'assistant', 'tool', 'function'];
+        
+        foreach ($messages as $index => $message) {
+            if (!is_array($message) || !isset($message['role'])) {
+                throw new \InvalidArgumentException("Message at index $index must be an array with a 'role' field");
+            }
+            
+            if (!in_array($message['role'], $validRoles)) {
+                throw new \InvalidArgumentException("Invalid role '{$message['role']}' at message index $index");
+            }
+            
+            // For most roles, content is required (except assistant with tool_calls)
+            if (!isset($message['content']) && 
+                !($message['role'] === 'assistant' && (isset($message['tool_calls']) || isset($message['function_call'])))) {
+                throw new \InvalidArgumentException("Message at index $index is missing required 'content' field");
+            }
+        }
     }
 
     /**
