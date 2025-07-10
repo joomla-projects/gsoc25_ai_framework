@@ -428,7 +428,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        $payload = $this->buildChatRequestPayload($message, $options, 'chat');
+        $payload = $this->buildChatRequestPayload($message, $options);
 
         // To Do: Remove repetition 
         $endpoint = $this->getChatEndpoint();
@@ -767,13 +767,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @throws  \InvalidArgumentException  If model does not support chat capability
      * @since  __DEPLOY_VERSION__
      */
-    private function buildChatRequestPayload(string $message, array $options = [], string $capability): array
+    private function buildChatRequestPayload(string $message, array $options = []): array
     {
         $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
-        
-        if (!$this->isModelCapable($model, $capability)) {
-            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
-        }
 
         if (isset($options['messages'])) {
             $messages = $options['messages'];
@@ -1559,7 +1555,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             );
         }
 
-        // To Do: Handle multiple choices if needed
+        // Handle multiple choices - use first choice for content, but include all in metadata
         $content = $data['choices'][0]['message']['content'] ?? '';
         
         $statusCode = $this->determineAIStatusCode($data);
@@ -1569,7 +1565,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             'usage' => $data['usage'],
             'finish_reason' => $data['choices'][0]['finish_reason'],
             'created' => $data['created'] ?? time(),
-            'id' => $data['id']
+            'id' => $data['id'],
+            'choices' => $data['choices']
         ];
 
         return new Response(
