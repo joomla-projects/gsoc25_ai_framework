@@ -10,6 +10,7 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ImageInterface;
@@ -618,8 +619,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @param   array   $options    Additional options for transcription
      *
      * @return  Response  The AI response containing transcribed text
-     * @throws  \InvalidArgumentException  If inputs are invalid
-     * @throws  \Exception  If API request fails
      * @since   __DEPLOY_VERSION__
      */
     public function transcribe(string $audioFile, string $model, array $options = []): Response
@@ -716,7 +715,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $model = $options['model'] ?? 'omni-moderation-latest';
         
         if (!in_array($model, self::MODERATION_MODELS)) {
-            throw new \InvalidArgumentException("Unsupported moderation model: $model");
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::MODERATION_MODELS, 'moderation');
         }
 
         $payload = [
@@ -751,7 +750,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     public function isContentFlagged(array $moderationResult): bool
     {
         if (!isset($moderationResult['results']) || empty($moderationResult['results'])) {
-            throw new \InvalidArgumentException('Invalid moderation result format');
+            throw InvalidArgumentException::invalidParameter('moderation[results]', $moderationResult, 'openai', 'Moderation result must contain valid results array.');
         }
 
         return $moderationResult['results'][0]['flagged'] ?? false;
@@ -774,7 +773,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['messages'])) {
             $messages = $options['messages'];
             if (!is_array($messages) || empty($messages)) {
-                throw new \InvalidArgumentException('Messages must be a non-empty array');
+                throw InvalidArgumentException::invalidMessages('openai', 'Messages must be a non-empty array.');
             }
             $this->validateMessages($messages);
         } else {
@@ -794,19 +793,19 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // Handle modalities parameter
         if (isset($options['modalities'])) {
             if (!is_array($options['modalities'])) {
-                throw new \InvalidArgumentException('Modalities must be an array');
+                throw InvalidArgumentException::invalidParameter('modalities', $options['modalities'], 'openai', 'Modalities must be an array.');
             }
             
             $validModalities = ['text', 'audio'];
             foreach ($options['modalities'] as $modality) {
                 if (!in_array($modality, $validModalities)) {
-                    throw new \InvalidArgumentException("Invalid modality '$modality'. Valid modalities: " . implode(', ', $validModalities));
+                    throw InvalidArgumentException::invalidParameter('modality', $modality, 'openai', 'Valid modalities: ' . implode(', ', $validModalities), ['valid_modalities' => $validModalities]);
                 }
             }
             
             // Audio modality requires gpt-4o-audio-preview model
             if (in_array('audio', $options['modalities']) && $model !== 'gpt-4o-audio-preview') {
-                throw new \InvalidArgumentException('Audio modality requires gpt-4o-audio-preview model');
+                throw InvalidArgumentException::invalidModel($model, 'openai', ['gpt-4o-audio-preview'], 'audio');
             }
             
             $payload['modalities'] = $options['modalities'];
@@ -816,30 +815,30 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['audio'])) {
             // Audio output requires audio modality
             if (!is_array($options['audio']) || !isset($payload['modalities']) || !in_array('audio', $payload['modalities'])) {
-                throw new \InvalidArgumentException('Audio output parameter must be an array and requires modalities to include "audio"');
+                throw InvalidArgumentException::invalidParameter('audio', $options['audio'], 'openai', 'Audio output parameter must be an array and requires modalities to include "audio".', ['required_modalities' => ['audio']]);
             }
             
             $audioParams = [];
             
             // Validate and set audio format
             if (!isset($options['audio']['format'])) {
-                throw new \InvalidArgumentException('Audio format is required when audio output is requested');
+                throw InvalidArgumentException::missingParameter('audio.format', 'openai', 'chat');
             }
             
             $validAudioFormats = ['wav', 'mp3', 'flac', 'opus', 'pcm16'];
             if (!in_array($options['audio']['format'], $validAudioFormats)) {
-                throw new \InvalidArgumentException('Audio format must be one of: ' . implode(', ', $validAudioFormats));
+                throw InvalidArgumentException::invalidParameter('audio.format', $options['audio']['format'], 'openai', 'Audio format must be one of: ' . implode(', ', $validAudioFormats), ['valid_formats' => $validAudioFormats]);
             }
             $audioParams['format'] = $options['audio']['format'];
             
             // Validate and set voice
             if (!isset($options['audio']['voice'])) {
-                throw new \InvalidArgumentException('Audio voice is required when audio output is requested');
+                throw InvalidArgumentException::missingParameter('audio.voice', 'openai', 'chat');
             }
             
             $validVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
             if (!in_array($options['audio']['voice'], $validVoices)) {
-                throw new \InvalidArgumentException('Audio voice must be one of: ' . implode(', ', $validVoices));
+                throw InvalidArgumentException::invalidVoice($options['audio']['voice'], $validVoices, 'openai');
             }
             $audioParams['voice'] = $options['audio']['voice'];
             
@@ -849,7 +848,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['n'])) {
             $n = (int) $options['n'];
             if ($n < 1 || $n > 128) {
-                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 128');
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 128.', ['min_value' => 1, 'max_value' => 128]);
             }
             $payload['n'] = $n;
         }
@@ -885,7 +884,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
         
         if (!$this->isModelCapable($model, $capability)) {
-            throw new \InvalidArgumentException("Model '$model' does not support $capability capability");
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::VISION_MODELS, $capability);
         }
 
         $content = [
@@ -942,7 +941,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $model = $options['model'] ?? 'dall-e-2';
 
         if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
-            throw new \InvalidArgumentException("Model '$model' does not support image generation.");
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::IMAGE_MODELS, 'image generation');
         }
 
         $this->validateImagePrompt($prompt, $model);
@@ -956,10 +955,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['n'])) {
             $n = (int) $options['n'];
             if ($model === 'dall-e-3' && $n !== 1) {
-                throw new \InvalidArgumentException('For dall-e-3, only n=1 is supported');
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'For dall-e-3, only n=1 is supported.', ['model' => 'dall-e-3', 'allowed_value' => 1]);
             }
             if ($n < 1 || $n > 10) {
-                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 10.', ['min_value' => 1, 'max_value' => 10]);
             }
             $payload['n'] = $n;
         }
@@ -976,20 +975,20 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (isset($options['style'])) {
             if ($model !== 'dall-e-3') {
-                throw new \InvalidArgumentException('Style parameter is only supported for dall-e-3');
+                throw InvalidArgumentException::invalidParameter('style', $options['style'], 'openai', 'Style parameter is only supported for dall-e-3.', ['model' => $model, 'supported_models' => ['dall-e-3']]);
             }
             if (!in_array($options['style'], ['vivid', 'natural'])) {
-                throw new \InvalidArgumentException('Style must be either "vivid" or "natural"');
+                throw InvalidArgumentException::invalidParameter('style', $options['style'], 'openai', 'Style must be either "vivid" or "natural".', ['valid_values' => ['vivid', 'natural']]);
             }
             $payload['style'] = $options['style'];
         }
         
         if (isset($options['response_format'])) {
             if ($model === 'gpt-image-1') {
-                throw new \InvalidArgumentException('response_format is not supported for gpt-image-1 (always returns base64)');
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'response_format is not supported for gpt-image-1 (always returns base64).', ['model' => 'gpt-image-1', 'fixed_format' => 'base64']);
             }
             if (!in_array($options['response_format'], ['url', 'b64_json'])) {
-                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'Response format must be either "url" or "b64_json".', ['valid_values' => ['url', 'b64_json']]);
             }
             $payload['response_format'] = $options['response_format'];
         }
@@ -997,7 +996,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // gpt-image-1 specific parameters
         if ($model === 'gpt-image-1') {
             if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
-                throw new \InvalidArgumentException('Background must be one of: transparent, opaque, auto');
+                throw InvalidArgumentException::invalidParameter('background', $options['background'], 'openai', 'Background must be one of: transparent, opaque, auto.', ['valid_values' => ['transparent', 'opaque', 'auto']]);
             }
             if (isset($options['background'])) {
                 $payload['background'] = $options['background'];
@@ -1005,7 +1004,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             
             if (isset($options['output_format'])) {
                 if (!in_array($options['output_format'], ['png', 'jpeg', 'webp'])) {
-                    throw new \InvalidArgumentException('Output format must be one of: png, jpeg, webp');
+                    throw InvalidArgumentException::invalidParameter('output_format', $options['output_format'], 'openai', 'Output format must be one of: png, jpeg, webp.', ['valid_values' => ['png', 'jpeg', 'webp']]);
                 }
                 $payload['output_format'] = $options['output_format'];
             }
@@ -1013,13 +1012,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             if (isset($options['output_compression'])) {
                 $compression = (int) $options['output_compression'];
                 if ($compression < 0 || $compression > 100) {
-                    throw new \InvalidArgumentException('Output compression must be between 0 and 100');
+                    throw InvalidArgumentException::invalidParameter('output_compression', $options['output_compression'], 'openai', 'Output compression must be between 0 and 100.', ['valid_range' => [0, 100]]);
                 }
                 $payload['output_compression'] = $compression;
             }
             
             if (isset($options['moderation']) && !in_array($options['moderation'], ['low', 'auto'])) {
-                throw new \InvalidArgumentException('Moderation must be either "low" or "auto"');
+                throw InvalidArgumentException::invalidParameter('moderation', $options['moderation'], 'openai', 'Moderation must be either "low" or "auto".', ['valid_values' => ['low', 'auto']]);
             }
             if (isset($options['moderation'])) {
                 $payload['moderation'] = $options['moderation'];
@@ -1048,7 +1047,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         // Only dall-e-2 supports variations
         if ($model !== 'dall-e-2') {
-            throw new \InvalidArgumentException("Model '$model' does not support image variations. Only dall-e-2 is supported.");
+            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2'], 'image variation');
         }
         
         $this->validateImageFile($imagePath, $model, 'variation');
@@ -1061,7 +1060,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['n'])) {
             $n = (int) $options['n'];
             if ($n < 1 || $n > 10) {
-                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 10.', ['valid_range' => [1, 10]]);
             }
             $payload['n'] = $n;
         }
@@ -1069,7 +1068,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['size'])) {
             $validSizes = ['256x256', '512x512', '1024x1024'];
             if (!in_array($options['size'], $validSizes)) {
-                throw new \InvalidArgumentException('Size must be one of: ' . implode(', ', $validSizes));
+                throw InvalidArgumentException::invalidParameter('size', $options['size'], 'openai', 'Size must be one of: ' . implode(', ', $validSizes), ['valid_values' => $validSizes]);
             }
             $payload['size'] = $options['size'];
         }
@@ -1077,7 +1076,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['response_format'])) {
             $validFormats = ['url', 'b64_json'];
             if (!in_array($options['response_format'], $validFormats)) {
-                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'Response format must be either "url" or "b64_json".', ['valid_values' => $validFormats]);
             }
             $payload['response_format'] = $options['response_format'];
         }
@@ -1105,7 +1104,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         // Only dall-e-2 and gpt-image-1 support image editing
         if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
-            throw new \InvalidArgumentException("Model '$model' does not support image editing.");
+            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2', 'gpt-image-1'], 'image editing');
         }
 
         $this->validateImageEditInputs($images, $prompt, $model, $options);
@@ -1122,13 +1121,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         } else {
             // Multiple images for gpt-image-1 model
             if ($model !== 'gpt-image-1') {
-                throw new \InvalidArgumentException("Multiple images only supported with gpt-image-1 model");
+                throw InvalidArgumentException::invalidModel($model, 'openai', ['gpt-image-1'], 'image editing');
             }
             
             $imageArray = [];
             foreach ($images as $imagePath) {
                 if (!file_exists($imagePath)) {
-                    throw new \InvalidArgumentException("Image file not found: $imagePath");
+                    throw InvalidArgumentException::fileNotFound($imagePath, 'openai');
                 }
                 $imageArray[] = file_get_contents($imagePath);
             }
@@ -1144,7 +1143,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['n'])) {
             $n = (int) $options['n'];
             if ($n < 1 || $n > 10) {
-                throw new \InvalidArgumentException('Parameter "n" must be between 1 and 10');
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 10.', ['valid_range' => [1, 10]]);
             }
             $payload['n'] = $n;
         }
@@ -1161,10 +1160,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (isset($options['response_format'])) {
             if ($model === 'gpt-image-1') {
-                throw new \InvalidArgumentException('response_format is not supported for gpt-image-1 (always returns base64)');
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'response_format is not supported for gpt-image-1 (always returns base64).');
             }
             if (!in_array($options['response_format'], ['url', 'b64_json'])) {
-                throw new \InvalidArgumentException('Response format must be either "url" or "b64_json"');
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'Response format must be either "url" or "b64_json".', ['valid_values' => ['url', 'b64_json']]);
             }
             $payload['response_format'] = $options['response_format'];
         }
@@ -1172,14 +1171,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // gpt-image-1 specific parameters
         if ($model === 'gpt-image-1') {
             if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
-                throw new \InvalidArgumentException('Background must be one of: transparent, opaque, auto');
+                throw InvalidArgumentException::invalidParameter('background', $options['background'], 'openai', 'Background must be one of: transparent, opaque, auto.', ['valid_values' => ['transparent', 'opaque', 'auto']]);
             }
             if (isset($options['background'])) {
                 $payload['background'] = $options['background'];
             }
             
             if (isset($options['output_format']) && !in_array($options['output_format'], ['png', 'jpeg', 'webp'])) {
-                throw new \InvalidArgumentException('Output format must be one of: png, jpeg, webp');
+                throw InvalidArgumentException::invalidParameter('output_format', $options['output_format'], 'openai', 'Output format must be one of: png, jpeg, webp.', ['valid_values' => ['png', 'jpeg', 'webp']]);
             }
             if (isset($options['output_format'])) {
                 $payload['output_format'] = $options['output_format'];
@@ -1188,7 +1187,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             if (isset($options['output_compression'])) {
                 $compression = (int) $options['output_compression'];
                 if ($compression < 0 || $compression > 100) {
-                    throw new \InvalidArgumentException('Output compression must be between 0 and 100');
+                    throw InvalidArgumentException::invalidParameter('output_compression', $compression, 'openai', 'Output compression must be between 0 and 100.', ['valid_range' => [0, 100]]);
                 }
                 $payload['output_compression'] = $compression;
             }
@@ -1216,17 +1215,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         // Validate input text
         if (strlen($text) > 4096) {
-            throw new \InvalidArgumentException('Speech input text cannot exceed 4096 characters, got: ' . strlen($text));
+            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', 'Speech input text cannot exceed 4096 characters, got: ' . strlen($text) . ' characters.', ['max_length' => 4096, 'actual_length' => strlen($text)]);
         }
         
         // Validate model
         if (!in_array($model, self::TTS_MODELS)) {
-            throw new \InvalidArgumentException("Unsupported TTS model: $model. Supported models: " . implode(', ', self::TTS_MODELS));
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::TTS_MODELS, 'text-to-speech');
         }
         
         // Validate voice
         if (!in_array($voice, self::VOICES)) {
-            throw new \InvalidArgumentException("Unsupported voice: $voice. Supported voices: " . implode(', ', self::VOICES));
+            throw InvalidArgumentException::invalidVoice($voice, self::VOICES, 'openai');
         }
         
         $payload = [
@@ -1237,34 +1236,34 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $responseFormat = $options['response_format'] ?? 'mp3';
         if (!in_array($responseFormat, self::AUDIO_FORMATS)) {
-            throw new \InvalidArgumentException("Unsupported response format: $responseFormat. Supported formats: " . implode(', ', self::AUDIO_FORMATS));
+            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', 'Audio response format must be one of: ' . implode(', ', self::AUDIO_FORMATS), ['valid_formats' => self::AUDIO_FORMATS]);
         }
         $payload['response_format'] = $responseFormat;
         
         if (isset($options['speed'])) {
             $speed = (float) $options['speed'];
             if ($speed < 0.25 || $speed > 4.0) {
-                throw new \InvalidArgumentException("Speed must be between 0.25 and 4.0, got: $speed");
+                throw InvalidArgumentException::invalidParameter('speed', $speed, 'openai', 'Speed must be between 0.25 and 4.0, got: ' . $speed, ['valid_range' => [0.25, 4.0]]);
             }
             $payload['speed'] = $speed;
         }
         
         if (isset($options['instructions'])) {
             if ($model !== 'gpt-4o-mini-tts') {
-                throw new \InvalidArgumentException("Instructions parameter is only supported with gpt-4o-mini-tts model");
+                throw InvalidArgumentException::invalidModel($model, 'openai', ['gpt-4o-mini-tts'], 'instructions parameter for text-to-speech');
             }
             if (!is_string($options['instructions']) || empty(trim($options['instructions']))) {
-                throw new \InvalidArgumentException("Instructions must be a non-empty string");
+                throw InvalidArgumentException::invalidParameter('instructions', $options['instructions'], 'openai', 'Instructions must be a non-empty string.', ['expected_type' => 'string', 'actual_type' => gettype($options['instructions'])]);
             }
             $payload['instructions'] = $options['instructions'];
         }
         
         if (isset($options['stream_format'])) {
             if ($model !== 'gpt-4o-mini-tts') {
-                throw new \InvalidArgumentException("Stream format parameter is only supported with gpt-4o-mini-tts model");
+                throw InvalidArgumentException::invalidModel($model, 'openai', ['gpt-4o-mini-tts'], 'stream format parameter for text-to-speech');
             }
             if (!in_array($options['stream_format'], ['sse', 'audio'])) {
-                throw new \InvalidArgumentException("Stream format must be 'sse' or 'audio', got: " . $options['stream_format']);
+                throw InvalidArgumentException::invalidParameter('stream_format', $options['stream_format'], 'openai', "Stream format must be 'sse' or 'audio', got: " . $options['stream_format']);
             }
             $payload['stream_format'] = $options['stream_format'];
         }
@@ -1290,7 +1289,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         // Validate model
         if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
-            throw new \InvalidArgumentException("Unsupported transcription model: $model. Supported models: " . implode(', ', self::TRANSCRIPTION_MODELS));
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::TRANSCRIPTION_MODELS, 'transcription');
         }
         
         $payload = [
@@ -1305,10 +1304,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (in_array($model, ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe'])) {
             if ($responseFormat !== 'json') {
-                throw new \InvalidArgumentException("For $model, only 'json' response format is supported");
+                throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', "For $model, only 'json' response format is supported.");
             }
         } elseif (!in_array($responseFormat, $validFormats)) {
-            throw new \InvalidArgumentException("Invalid response format: $responseFormat. Valid formats: " . implode(', ', $validFormats));
+            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', "Invalid response format: $responseFormat. Valid formats: " . implode(', ', $validFormats));
         }
         $payload['response_format'] = $responseFormat;
         
@@ -1323,7 +1322,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['temperature'])) {
             $temperature = (float) $options['temperature'];
             if ($temperature < 0 || $temperature > 1) {
-                throw new \InvalidArgumentException("Temperature must be between 0 and 1, got: $temperature");
+                throw InvalidArgumentException::invalidTemperature($temperature, 'openai');
             }
             $payload['temperature'] = $temperature;
         }
@@ -1334,21 +1333,21 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (isset($options['include'])) {
             if (!is_array($options['include'])) {
-                throw new \InvalidArgumentException("Include parameter must be an array");
+                throw InvalidArgumentException::invalidParameter('include', $options['include'], 'openai', "Include parameter must be an array.");
             }
             $validIncludes = ['logprobs'];
             foreach ($options['include'] as $include) {
                 if (!in_array($include, $validIncludes)) {
-                    throw new \InvalidArgumentException("Invalid include option: $include. Valid options: " . implode(', ', $validIncludes));
+                    throw InvalidArgumentException::invalidParameter('include', $include, 'openai', "Invalid include option: $include. Valid options: " . implode(', ', $validIncludes));
                 }
             }
             // logprobs only works with json format and specific models
             if (in_array('logprobs', $options['include'])) {
                 if ($responseFormat !== 'json') {
-                    throw new \InvalidArgumentException("logprobs include option only works with 'json' response format");
+                    throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', "logprobs include option only works with 'json' response format.");
                 }
                 if (!in_array($model, ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe'])) {
-                    throw new \InvalidArgumentException("logprobs include option only works with gpt-4o-transcribe and gpt-4o-mini-transcribe models");
+                    throw InvalidArgumentException::invalidParameter('include', 'logprobs', 'openai', 'logprobs include option only works with gpt-4o-transcribe and gpt-4o-mini-transcribe models.');
                 }
             }
             $payload['include'] = $options['include'];
@@ -1356,22 +1355,22 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (isset($options['stream'])) {
             if ($model === 'whisper-1') {
-                throw new \InvalidArgumentException("Streaming is not supported for whisper-1 model");
+                throw InvalidArgumentException::invalidModel($model, 'openai', ['whisper-1'], 'streaming for text-to-speech');
             }
             $payload['stream'] = (bool) $options['stream'];
         }
         
         if (isset($options['timestamp_granularities'])) {
             if ($responseFormat !== 'verbose_json') {
-                throw new \InvalidArgumentException("timestamp_granularities only works with 'verbose_json' response format");
+                throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', "timestamp_granularities only works with 'verbose_json' response format.");
             }
             if (!is_array($options['timestamp_granularities'])) {
-                throw new \InvalidArgumentException("timestamp_granularities must be an array");
+                throw InvalidArgumentException::invalidParameter('timestamp_granularities', $options['timestamp_granularities'], 'openai', "timestamp_granularities must be an array.");
             }
             $validGranularities = ['word', 'segment'];
             foreach ($options['timestamp_granularities'] as $granularity) {
                 if (!in_array($granularity, $validGranularities)) {
-                    throw new \InvalidArgumentException("Invalid timestamp granularity: $granularity. Valid options: " . implode(', ', $validGranularities));
+                    throw InvalidArgumentException::invalidParameter('timestamp_granularities', $granularity, 'openai', "Valid options: " . implode(', ', $validGranularities));
                 }
             }
             $payload['timestamp_granularities'] = $options['timestamp_granularities'];
@@ -1398,7 +1397,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         // Validate model
         if ($model !== 'whisper-1') {
-            throw new \InvalidArgumentException("Translation only supports whisper-1 model, got: $model");
+            throw InvalidArgumentException::invalidModel($model, 'openai', ['whisper-1'], 'translation');
         }
         
         $payload = [
@@ -1411,7 +1410,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $responseFormat = $options['response_format'] ?? 'json';
         $validFormats = ['json', 'text', 'srt', 'verbose_json', 'vtt'];
         if (!in_array($responseFormat, $validFormats)) {
-            throw new \InvalidArgumentException("Invalid response format: $responseFormat. Valid formats: " . implode(', ', $validFormats));
+            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', "Valid formats: " . implode(', ', $validFormats));
         }
         $payload['response_format'] = $responseFormat;
         
@@ -1422,7 +1421,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['temperature'])) {
             $temperature = (float) $options['temperature'];
             if ($temperature < 0 || $temperature > 1) {
-                throw new \InvalidArgumentException("Temperature must be between 0 and 1, got: $temperature");
+                throw InvalidArgumentException::invalidTemperature($temperature, 'openai');
             }
             $payload['temperature'] = $temperature;
         }
@@ -1446,7 +1445,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         // Validate model
         if (!in_array($model, self::EMBEDDING_MODELS)) {
-            throw new \InvalidArgumentException("Unsupported embedding model: $model");
+            throw InvalidArgumentException::invalidModel($model, 'openai', self::EMBEDDING_MODELS, 'embedding');
         }
         
         $payload = [
@@ -1456,20 +1455,20 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
 
         $encodingFormat = $options['encoding_format'] ?? 'float';
         if (!in_array($encodingFormat, ['float', 'base64'])) {
-            throw new \InvalidArgumentException("Encoding format must be 'float' or 'base64', got: $encodingFormat");
+            throw InvalidArgumentException::invalidParameter('encoding_format', $encodingFormat, 'openai', "Encoding format must be 'float' or 'base64'.");
         }
         $payload['encoding_format'] = $encodingFormat;
 
         if (isset($options['dimensions'])) {
             if (!in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
-                throw new \InvalidArgumentException("Dimensions parameter is only supported for text-embedding-3-large and text-embedding-3-small models");
+                throw InvalidArgumentException::invalidParameter('dimensions', $options['dimensions'], 'openai', "Dimensions parameter is only supported for text-embedding-3-large and text-embedding-3-small models.");
             }
             
             $dimensions = (int) $options['dimensions'];
             $maxDimensions = $model === 'text-embedding-3-large' ? 3072 : 1536;
             
             if ($dimensions < 1 || $dimensions > $maxDimensions) {
-                throw new \InvalidArgumentException("Dimensions must be between 1 and $maxDimensions for $model");
+                throw InvalidArgumentException::invalidParameter('dimensions', $dimensions, 'openai', "Dimensions must be between 1 and $maxDimensions for $model.");
             }
             
             $payload['dimensions'] = $dimensions;
@@ -1877,17 +1876,17 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         foreach ($messages as $index => $message) {
             if (!is_array($message) || !isset($message['role'])) {
-                throw new \InvalidArgumentException("Message at index $index must be an array with a 'role' field");
+                throw InvalidArgumentException::invalidParameter('messages', $message, 'openai', "Message at index $index must be an array with a 'role' field.");
             }
             
             if (!in_array($message['role'], $validRoles)) {
-                throw new \InvalidArgumentException("Invalid role '{$message['role']}' at message index $index");
+                throw InvalidArgumentException::invalidParameter('role', $message['role'], 'openai', "Invalid role '{$message['role']}' at message index $index. Valid roles are: " . implode(', ', $validRoles));
             }
             
             // For most roles, content is required (except assistant with tool_calls)
             if (!isset($message['content']) && 
                 !($message['role'] === 'assistant' && (isset($message['tool_calls']) || isset($message['function_call'])))) {
-                throw new \InvalidArgumentException("Message at index $index is missing required 'content' field");
+                throw InvalidArgumentException::missingParameter('content at message index ' . $index, 'openai');
             }
         }
     }
@@ -1913,9 +1912,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         // Validate prompt length
         if (isset($maxLengths[$model]) && strlen(trim($prompt)) > $maxLengths[$model]) {
-            throw new \InvalidArgumentException(
-                "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ({$maxLengths[$model]} characters)"
-            );
+            throw InvalidArgumentException::invalidParameter('prompt', $prompt, 'openai', "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ({$maxLengths[$model]} characters)");
         }
     }
 
@@ -1939,11 +1936,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $this->validateImageFile($images, $model, 'edit');
         } else {
             if ($model !== 'gpt-image-1') {
-                throw new \InvalidArgumentException('Multiple images only supported with gpt-image-1 model');
+                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Multiple images only supported with gpt-image-1 model.');
             }
             
             if (count($images) > 16) {
-                throw new \InvalidArgumentException('Maximum 16 images allowed for gpt-image-1');
+                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Maximum 16 images allowed for gpt-image-1.');
             }
             
             foreach ($images as $imagePath) {
@@ -1965,7 +1962,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private function validateImageFile(string $imagePath, string $model, string $operation): void
     {
         if (!file_exists($imagePath)) {
-            throw new \InvalidArgumentException("Image file not found: $imagePath");
+            throw InvalidArgumentException::fileNotFound($imagePath, 'openai');
         }
         
         $fileSize = filesize($imagePath);
@@ -1975,30 +1972,30 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if ($model === 'gpt-image-1') {
             // gpt-image-1 supports png, webp, jpg, max 50MB
             if (!in_array($extension, ['png', 'webp', 'jpg', 'jpeg'])) {
-                throw new \InvalidArgumentException("For gpt-image-1, image must be png, webp, or jpg. Got: $extension");
+                throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For gpt-image-1, image must be png, webp, or jpg. Got: $extension");
             }
             
             if ($fileSize > 50 * 1024 * 1024) { // 50MB
-                throw new \InvalidArgumentException("For gpt-image-1, image must be less than 50MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 50, $model, 'openai');
             }
         } elseif ($model === 'dall-e-2') {
             // dall-e-2 requires square PNG, max 4MB
             if ($extension !== 'png') {
-                throw new \InvalidArgumentException("For dall-e-2, image must be a PNG file. Got: $extension");
+                throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For dall-e-2, image must be a PNG file. Got: $extension");
             }
             
             if ($fileSize > 4 * 1024 * 1024) { // 4MB
-                throw new \InvalidArgumentException("For dall-e-2, image must be less than 4MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 4, $model, 'openai');
             }
             
             // Check if image is square (for variations)
             if ($operation === 'variation') {
                 $imageInfo = getimagesize($imagePath);
                 if ($imageInfo === false) {
-                    throw new \InvalidArgumentException("Unable to read image dimensions from: $imagePath");
+                    throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "Unable to read image dimensions from: $imagePath");
                 }
                 if ($imageInfo[0] !== $imageInfo[1]) {
-                    throw new \InvalidArgumentException("For dall-e-2 variations, image must be square. Current dimensions: {$imageInfo[0]}x{$imageInfo[1]}");
+                    throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For dall-e-2 variations, image must be square. Current dimensions: {$imageInfo[0]}x{$imageInfo[1]}");
                 }
             }
         }
@@ -2015,7 +2012,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private function validateMaskFile(string $maskPath): void
     {
         if (!file_exists($maskPath)) {
-            throw new \InvalidArgumentException("Mask file not found: $maskPath");
+            throw InvalidArgumentException::fileNotFound($maskPath, 'openai');
         }
         
         $fileSize = filesize($maskPath);
@@ -2023,11 +2020,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $extension = strtolower($fileInfo['extension'] ?? '');
         
         if ($extension !== 'png') {
-            throw new \InvalidArgumentException("Mask must be a PNG file. Got: $extension");
+            throw InvalidArgumentException::invalidFileFormat($maskPath, $extension, ['png'], 'openai');
         }
         
         if ($fileSize > 4 * 1024 * 1024) { // 4MB
-            throw new \InvalidArgumentException("Mask must be less than 4MB. Current size: " . round($fileSize / 1024 / 1024, 2) . "MB");
+            throw InvalidArgumentException::fileSizeExceeded($maskPath, $fileSize, 4, 'openai');
         }
     }
 
@@ -2060,9 +2057,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
         
         if (!in_array($size, $validSizes)) {
-            throw new \InvalidArgumentException(
-                "Invalid size '$size' for model '$model' and operation '$operation'. Valid sizes: " . implode(', ', $validSizes)
-            );
+            throw InvalidArgumentException::invalidImageSize($size, $validSizes, $model, $operation);
         }
     }
 
@@ -2094,9 +2089,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
         
         if (!in_array($quality, $validQualities)) {
-            throw new \InvalidArgumentException(
-                "Invalid quality '$quality' for model '$model'. Valid qualities: " . implode(', ', $validQualities)
-            );
+            throw InvalidArgumentException::invalidParameter('quality', $quality, 'openai', 'Valid qualities: ' . implode(', ', $validQualities) . ' for model: ' . $model);
         }
     }
 
@@ -2112,7 +2105,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     private function validateAudioFile(string $audioFile): void
     {
         if (!file_exists($audioFile)) {
-            throw new \InvalidArgumentException("Audio file not found: $audioFile");
+            throw InvalidArgumentException::fileNotFound($audioFile, 'openai');
         }
         
         $audioData = file_get_contents($audioFile);
@@ -2124,17 +2117,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $extension = strtolower($fileInfo['extension'] ?? '');
         
         if (!in_array($extension, self::TRANSCRIPTION_INPUT_FORMATS)) {
-            throw new \InvalidArgumentException(
-                "Unsupported audio format: $extension. Supported formats: " . implode(', ', self::TRANSCRIPTION_INPUT_FORMATS)
-            );
+            throw InvalidArgumentException::invalidFileFormat($audioFile, $extension, self::TRANSCRIPTION_INPUT_FORMATS, 'openai');
         }
         
         // Check file size (OpenAI has a 25MB limit for audio files)
         $fileSize = filesize($audioFile);
         if ($fileSize > 25 * 1024 * 1024) { // 25MB
-            throw new \InvalidArgumentException(
-                "Audio file too large. Maximum size is 25MB, got: " . round($fileSize / 1024 / 1024, 2) . "MB"
-            );
+            throw InvalidArgumentException::fileSizeExceeded($audioFile, $fileSize, 25, 'openai');
         }
     }
 
