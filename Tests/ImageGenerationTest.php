@@ -10,36 +10,46 @@ $configFile = __DIR__ . '/../config.json';
 $config = json_decode(file_get_contents($configFile), true);
 $api_key = $config['openai_api_key'] ?? null;
 
+function saveBase64Image($base64Data, $filename) {
+    $imageData = base64_decode($base64Data);
+    file_put_contents($filename, $imageData);
+    return filesize($filename);
+}
+
 try {
     $provider = new OpenAIProvider(['api_key' => $api_key]);
     
     echo "Provider: " . $provider->getName() . "\n\n";
     
     // ============================================
-    // TEST 1: DALL-E 3 with Base64 (default)
+    // TEST 1: DALL-E 3 with Base64
     // ============================================
     
-    echo "Test 1: DALL-E 3 with Base64 response (default)...\n";
+    echo "Test 1: DALL-E 3 with Base64 response...\n";
     $response = $provider->generateImage(
         "A red apple on a white table", 
-        ['model' => 'dall-e-3']
+        [
+            'model' => 'dall-e-3',
+            'response_format' => 'b64_json',
+        ]
     );
     
     echo "Status: " . $response->getStatusCode() . "\n";
     echo "Provider: " . $response->getProvider() . "\n";
     $metadata = $response->getMetadata();
-    echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
 
     if (isset($metadata['revised_prompt'])) {
         echo "Revised prompt: " . "\n";
     }
-    
-    $content = $response->getContent();
-    if (strlen($content) > 0) {
-        file_put_contents('output/test1_dalle3_base64.png', base64_decode($content));
-        echo "Image saved as: output/test1_dalle3_base64.png\n";
-    } else {
-        echo "No base64 content received\n";
+
+    echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
+    if ($metadata['response_format'] === 'url') {
+        echo "  Image URL: " . $response->getContent() . "\n";
+    } elseif ($metadata['response_format'] === 'b64_json') {
+        echo "Base64 data received. \n";
+        
+        saveBase64Image($response->getContent(), 'output/test1_dalle3_base64.png');
+        echo "Image saved as: output/test1_dalle3_base64.png \n";
     }
     
     echo "\n" . str_repeat("-", 50) . "\n\n";
@@ -59,13 +69,13 @@ try {
         
     $metadata = $response->getMetadata();
     echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
-
     if ($metadata['response_format'] === 'url') {
-        $imageUrl = $response->getContent();
-        echo "Image URL: " . $imageUrl . "\n";
-        echo "URL expires: " . ($metadata['url_expires'] ?? 'unknown') . "\n";
-    } else {
-        echo "No URL received (response format: " . ($metadata['response_format'] ?? 'unknown') . ")\n";
+        echo "  Image URL: " . $response->getContent() . "\n";
+    } elseif ($metadata['response_format'] === 'b64_json') {
+        echo "Base64 data received. \n";
+        
+        saveBase64Image($response->getContent(), 'output/test2_dalle3_base64.png');
+        echo "Image saved as: output/test2_dalle3_base64.png \n";
     }
 
     echo "\n" . str_repeat("-", 50) . "\n\n";
@@ -79,6 +89,8 @@ try {
         "A simple drawing of a house", 
         [
             'model' => 'dall-e-2',
+            'response_format' => 'b64_json',
+            'n' => 2
         ]
     );
         
@@ -87,9 +99,30 @@ try {
     echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
     
     $content = $response->getContent();
-    if (strlen($content) > 0) {
-        file_put_contents('output/test3_dalle2_base64.png', base64_decode($content));
-        echo "Image saved as: output/test3_dalle2_base64.png\n";
+    echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
+    if ($metadata['response_format'] === 'url') {
+        if ($metadata['image_count'] === 1) {
+            echo "  Image URL: " . $response->getContent() . "\n";
+        } else {
+            $urls = json_decode($response->getContent(), true);
+            foreach ($urls as $index => $url) {
+                echo "  Image " . ($index + 1) . ": " . $url . "\n";
+            }
+        }
+    } elseif ($metadata['response_format'] === 'b64_json') {
+        echo "Base64 data received. \n";
+        
+        if ($metadata['image_count'] === 1) {
+            $fileSize = saveBase64Image($response->getContent(), 'output/test3_dalle2_base64.png');
+            echo "  Image saved as: output/test3_dalle2_base64.png (Size: {$fileSize} bytes)\n";
+        } else {
+            $base64Data = json_decode($response->getContent(), true);
+            foreach ($base64Data as $index => $data) {
+                $filename = 'output/test3_dalle2_base64_' . ($index + 1) . '.png';
+                $fileSize = saveBase64Image($data, $filename);
+                echo "  Image " . ($index + 1) . " saved as: {$filename} (Size: {$fileSize} bytes)\n";
+            }
+        }
     }
     
     echo "\n" . str_repeat("-", 50) . "\n\n";
@@ -108,16 +141,32 @@ try {
     );
         
     $metadata = $response->getMetadata();
-    echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
-
+        echo "Response format: " . ($metadata['response_format'] ?? 'unknown') . "\n";
     if ($metadata['response_format'] === 'url') {
-        $imageUrl = $response->getContent();
-        echo "Image URL: " . $imageUrl . "\n";
-        echo "URL expires: " . ($metadata['url_expires'] ?? 'unknown') . "\n";
-    } else {
-        echo "No URL received (response format: " . ($metadata['response_format'] ?? 'unknown') . ")\n";
+        if ($metadata['image_count'] === 1) {
+            echo "  Image URL: " . $response->getContent() . "\n";
+        } else {
+            $urls = json_decode($response->getContent(), true);
+            foreach ($urls as $index => $url) {
+                echo "  Image " . ($index + 1) . ": " . $url . "\n";
+            }
+        }
+    } elseif ($metadata['response_format'] === 'b64_json') {
+        echo "Base64 data received. \n";
+        
+        if ($metadata['image_count'] === 1) {
+            $fileSize = saveBase64Image($response->getContent(), 'output/test4_dalle2_base64.png');
+            echo "  Image saved as: output/test4_dalle2_base64.png (Size: {$fileSize} bytes)\n";
+        } else {
+            $base64Data = json_decode($response->getContent(), true);
+            foreach ($base64Data as $index => $data) {
+                $filename = 'output/test4_dalle2_base64_' . ($index + 1) . '.png';
+                $fileSize = saveBase64Image($data, $filename);
+                echo "  Image " . ($index + 1) . " saved as: {$filename} (Size: {$fileSize} bytes)\n";
+            }
+        }
     }
-    
+
     echo "\n" . str_repeat("-", 50) . "\n\n";
 
     echo "ALL TESTS COMPLETED!\n\n";
