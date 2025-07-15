@@ -11,6 +11,8 @@ namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\RateLimitException;
+use Joomla\AI\Exception\QuotaExceededException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\ModerationInterface;
 
@@ -91,17 +93,8 @@ abstract class AbstractProvider implements ProviderInterface
         try {
             $response = $this->httpFactory->getHttp([])->get($url, $headers, $timeout);
             
-            // Check for authentication and rate limiting errors
-            $statusCode = $response->getStatusCode();
-            if (in_array($statusCode, [401, 403, 429])) {
-                $responseBody = $response->getBody();
-                $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
-
-                throw new AuthenticationException($this->getName(), $errorData, $statusCode);
-            }
-            
-        } 
-        catch (AuthenticationException $e) {
+            $this->validateResponse($response);
+        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
             throw $e;
         } catch (\Exception $e) {
             throw new \Exception('AI API GET request failed: ' . $e->getMessage(), 0, $e);
@@ -127,16 +120,9 @@ abstract class AbstractProvider implements ProviderInterface
         try {
             $response = $this->httpFactory->getHttp([])->post($url, $data, $headers, $timeout);
             
-            // Check for authentication and rate limiting errors
-            $statusCode = $response->getStatusCode();
-            if (in_array($statusCode, [401, 403, 429])) {
-                $responseBody = $response->getBody();
-                $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
-
-                throw new AuthenticationException($this->getName(), $errorData, $statusCode);
-            }
+            $this->validateResponse($response);
             
-        } catch (AuthenticationException $e) {
+        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
             throw $e;
         } catch (\Exception $e) {
             throw new \Exception('AI API POST request failed: ' . $e->getMessage(), 0, $e);
@@ -381,14 +367,27 @@ abstract class AbstractProvider implements ProviderInterface
     protected function validateResponse($response): bool
     {
         if ($response->code < 200 || $response->code >= 300) {
-            // Handle authentication and rate limiting errors specifically
-            if (in_array($response->code, [401, 403, 429])) {
-                $errorData = json_decode($response->body, true) ?? ['message' => $response->body];
+            $responseBody = $response->body;
+            $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
+            $message = $errorData['message'] ?? $errorData['error']['message'] ?? 'Unknown error';
+            $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? $errorData['type'] ?? $errorData['error']['type'] ?? null;
 
-                throw new AuthenticationException($this->getName(), $errorData, $response->code);
+            // Handle specific HTTP status codes with appropriate exceptions
+            switch ($response->code) {
+                case 401:
+                case 403:
+                    throw new AuthenticationException($this->getName(), $errorData, $response->code);
+                    
+                case 429:
+                    if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') ||str_contains(strtolower($message), 'billing')) {
+                        throw new QuotaExceededException($this->getName(), $message, ['error_data' => $errorData], $response->code, $providerErrorCode);
+                    } elseif (str_contains(strtolower($message), 'rate') || str_contains(strtolower($message), 'limit') || str_contains(strtolower($message), 'too many requests')) {
+                        throw new RateLimitException($this->getName(), $message, ['error_data' => $errorData], $response->code, $providerErrorCode);
+                    }
+                    
+                default:
+                    throw new \Exception('AI API Error: HTTP ' . $response->code . ' - ' . $responseBody);
             }
-            
-            throw new \Exception('AI API Error: HTTP ' . $response->code . ' - ' . $response->body);
         }
     
         return true;

@@ -88,12 +88,12 @@ class AuthenticationException extends AIException
         $errorCode = $errorData['code'] ?? $errorData['error']['code'] ?? 'Unknown';
         $details[] = "Error Code: {$errorCode}";
         
-        $isRetryable = $httpStatusCode === 429;
-        $details[] = "Retryable: " . ($isRetryable ? 'Yes' : 'No');
+        // $isRetryable = $httpStatusCode === 429;
+        // $details[] = "Retryable: " . ($isRetryable ? 'Yes' : 'No');
         
-        if ($isRetryable) {
-            $details[] = "Retry Delay: 60 seconds";
-        }
+        // if ($isRetryable) {
+        //     $details[] = "Retry Delay: 60 seconds";
+        // }
 
         $originalMessage = $this->extractMessage($errorData, $provider);
         $details[] = "Message: {$originalMessage}";

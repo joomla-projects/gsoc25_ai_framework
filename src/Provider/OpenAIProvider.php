@@ -267,7 +267,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         $headers = $this->buildHeaders();
         $response = $this->makeGetRequest('https://api.openai.com/v1/models', $headers);
-        $this->validateResponse($response);
         $data = $this->parseJsonResponse($response->body);
         
         return array_column($data['data'], 'id');
@@ -441,9 +440,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload), 
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
-        
+                
         return $this->parseOpenAIResponse($httpResponse->body);
     }
 
@@ -480,9 +477,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload), 
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
-        
+                
         return $this->parseOpenAIResponse($httpResponse->body);
     }
 
@@ -513,9 +508,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload), 
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
-        
+                
         return $this->parseImageResponse($httpResponse->body);
     }
 
@@ -539,9 +532,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $payload, 
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
-        
+                
         return $this->parseImageResponse($httpResponse->body);
     }
 
@@ -573,9 +564,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $payload,
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
-        
+                
         return $this->parseImageResponse($httpResponse->body);
     }
 
@@ -592,7 +581,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     public function speech(string $text, string $model, string $voice, array $options = []): Response    
     {
-        // To Do: Validate inputs
         // Apply moderation to the text input for speech generation
         $isBlocked = $this->moderateInput($text, []);
         
@@ -600,14 +588,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        // To Do: Validate inputs
         $payload = $this->buildSpeechPayload($text, $model, $voice, $options);
 
         $endpoint = $this->getAudioSpeechEndpoint();
         $headers = $this->buildHeaders();
         $httpResponse = $this->makePostRequest($endpoint, json_encode($payload), $headers);
-
-        $this->validateResponse($httpResponse);
         
         return $this->parseAudioResponse($httpResponse->body, $payload);
     }
@@ -633,8 +618,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $payload,
             $headers
         );
-        
-        $this->validateResponse($httpResponse);
 
         return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Transcription');
     }
@@ -661,8 +644,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
 
-        $this->validateResponse($httpResponse);
-
         return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Translation');
     }
 
@@ -685,7 +666,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        // To Do: Validate inputs
         $payload = $this->buildEmbeddingPayload($input, $model, $options);
 
         $headers = $this->buildHeaders();
@@ -695,8 +675,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload),
             $headers
         );
-
-        $this->validateResponse($httpResponse);
 
         return $this->parseEmbeddingResponse($httpResponse->body, $payload);
     }
@@ -731,8 +709,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload),
             $headers
         );
-
-        $this->validateResponse($httpResponse);
 
         $data = $this->parseJsonResponse($httpResponse->body);
 
