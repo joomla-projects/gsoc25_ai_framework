@@ -10,6 +10,7 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
@@ -1518,7 +1519,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Get the OpenAI API key.
      *
      * @return  string  The API key
-     * @throws  \Exception  If API key is not found
+     * @throws  AuthenticationException  If API key is not found
      * @since  __DEPLOY_VERSION__
      */
     private function getApiKey(): string
@@ -1529,7 +1530,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                   getenv('OPENAI_API_KEY');
         
         if (empty($apiKey)) {
-            throw new \Exception('OpenAI API key not configured. Set OPENAI_API_KEY environment variable.');
+            throw new AuthenticationException(
+                $this->getName(),
+                ['message' => 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable or provide api_key option.'],
+                401
+            );
         }
         
         return $apiKey;

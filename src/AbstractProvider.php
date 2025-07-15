@@ -10,6 +10,7 @@
 namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
+use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\ModerationInterface;
 
@@ -89,6 +90,19 @@ abstract class AbstractProvider implements ProviderInterface
     {
         try {
             $response = $this->httpFactory->getHttp([])->get($url, $headers, $timeout);
+            
+            // Check for authentication and rate limiting errors
+            $statusCode = $response->getStatusCode();
+            if (in_array($statusCode, [401, 403, 429])) {
+                $responseBody = $response->getBody();
+                $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
+
+                throw new AuthenticationException($this->getName(), $errorData, $statusCode);
+            }
+            
+        } 
+        catch (AuthenticationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             throw new \Exception('AI API GET request failed: ' . $e->getMessage(), 0, $e);
         }
@@ -112,6 +126,18 @@ abstract class AbstractProvider implements ProviderInterface
     {
         try {
             $response = $this->httpFactory->getHttp([])->post($url, $data, $headers, $timeout);
+            
+            // Check for authentication and rate limiting errors
+            $statusCode = $response->getStatusCode();
+            if (in_array($statusCode, [401, 403, 429])) {
+                $responseBody = $response->getBody();
+                $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
+
+                throw new AuthenticationException($this->getName(), $errorData, $statusCode);
+            }
+            
+        } catch (AuthenticationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             throw new \Exception('AI API POST request failed: ' . $e->getMessage(), 0, $e);
         }
@@ -355,6 +381,13 @@ abstract class AbstractProvider implements ProviderInterface
     protected function validateResponse($response): bool
     {
         if ($response->code < 200 || $response->code >= 300) {
+            // Handle authentication and rate limiting errors specifically
+            if (in_array($response->code, [401, 403, 429])) {
+                $errorData = json_decode($response->body, true) ?? ['message' => $response->body];
+
+                throw new AuthenticationException($this->getName(), $errorData, $response->code);
+            }
+            
             throw new \Exception('AI API Error: HTTP ' . $response->code . ' - ' . $response->body);
         }
     
