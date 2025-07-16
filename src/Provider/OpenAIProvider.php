@@ -12,6 +12,7 @@ namespace Joomla\AI\Provider;
 use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
+use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ImageInterface;
@@ -1530,9 +1531,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $data = $this->parseJsonResponse($responseBody);
         
         if (isset($data['error'])) {
-            throw new \Exception(
-                'OpenAI API Error: ' . ($data['error']['message'] ?? 'Unknown error')
-            );
+            throw new ProviderException($this->getName(), $data);
         }
 
         // Handle multiple choices - use first choice for content, but include all in metadata
@@ -1573,9 +1572,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // error_log('OpenAI Image Response: ' . print_r($data, true));
         
         if (isset($data['error'])) {
-            throw new \Exception(
-                'OpenAI Image API Error: ' . ($data['error']['message'] ?? 'Unknown error')
-            );
+            throw new ProviderException($this->getName(), $data);
         }
 
         $images = [];
@@ -1662,9 +1659,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $data = $this->parseJsonResponse($responseBody);
             
             if (isset($data['error'])) {
-                throw new \Exception(
-                    'OpenAI API Error: ' . ($data['error']['message'] ?? 'Unknown error')
-                );
+                throw new ProviderException($this->getName(), $data);
             }
         }
         
@@ -1715,9 +1710,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 $data = $this->parseJsonResponse($responseBody);
                 
                 if (isset($data['error'])) {
-                    throw new \Exception(
-                        "OpenAI $apiType API Error: " . ($data['error']['message'] ?? 'Unknown error')
-                    );
+                    throw new ProviderException($this->getName(), $data);
                 }
                 
                 $content = $data['text'] ?? '';
@@ -1774,7 +1767,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
                 break;
                 
             default:
-                throw new \Exception("Unsupported response format: $responseFormat");
+                throw new ProviderException($this->getName(), ['error' => 'Unsupported response format: ' . $responseFormat]);
         }
 
         return new Response(
@@ -1799,8 +1792,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $data = $this->parseJsonResponse($responseBody);
         
         if (isset($data['error'])) {
-            throw new \Exception(
-                'OpenAI Embeddings API Error: ' . ($data['error']['message'] ?? 'Unknown error')
+            throw new ProviderException($this->getName(), $data
             );
         }
 
@@ -2091,7 +2083,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         $audioData = file_get_contents($audioFile);
         if ($audioData === false) {
-            throw new \Exception("Failed to read audio file: $audioFile");
+            throw InvalidArgumentException::fileNotFound($audioFile, 'openai');
         }
         
         $fileInfo = pathinfo($audioFile);

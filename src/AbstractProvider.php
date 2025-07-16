@@ -11,6 +11,7 @@ namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
 use Joomla\AI\Exception\QuotaExceededException;
 use Joomla\AI\Exception\UnserializableResponseException;
@@ -97,8 +98,8 @@ abstract class AbstractProvider implements ProviderInterface
             $this->validateResponse($response);
         } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
             throw $e;
-        } catch (\Exception $e) {
-            throw new \Exception('AI API GET request failed: ' . $e->getMessage(), 0, $e);
+        } catch (ProviderException $e) {
+            throw $e;
         }
 
         return $response;
@@ -125,8 +126,8 @@ abstract class AbstractProvider implements ProviderInterface
             
         } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
             throw $e;
-        } catch (\Exception $e) {
-            throw new \Exception('AI API POST request failed: ' . $e->getMessage(), 0, $e);
+        } catch (ProviderException $e) {
+            throw $e;
         }
 
         return $response;
@@ -387,7 +388,7 @@ abstract class AbstractProvider implements ProviderInterface
                     }
                     
                 default:
-                    throw new \Exception('AI API Error: HTTP ' . $response->code . ' - ' . $responseBody);
+                    throw new ProviderException($this->getName(), $errorData, $response->code, $providerErrorCode);
             }
         }
     
