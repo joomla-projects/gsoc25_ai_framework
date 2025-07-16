@@ -122,4 +122,27 @@ class AIException extends \Exception
     {
         return false;
     }
+
+    /**
+     * Build a detailed error message for all AI exceptions.
+     *
+     * @param   string        $provider           The AI provider name
+     * @param   string        $errorType          The error type (e.g. Authentication, Rate Limit, etc.)
+     * @param   string        $message            The error message
+     * @param   int|null      $httpStatusCode     HTTP status code
+     * @param   string|int|null $providerErrorCode Provider-specific error code
+     *
+     * @return  string  Detailed error message
+     */
+    protected function buildDetailedMessage(string $provider, string $errorType, string $message, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null): string {
+        $details = [];
+        $details[] = "Provider: {$provider}";
+        $details[] = "HTTP Status: " . ($httpStatusCode ?? 'Unknown');
+        $details[] = "Error Type: {$errorType}";
+        if ($providerErrorCode) {
+            $details[] = "Error Code: {$providerErrorCode}";
+        }
+        $details[] = "Message: {$message}";
+        return implode("\n", $details);
+    }
 }

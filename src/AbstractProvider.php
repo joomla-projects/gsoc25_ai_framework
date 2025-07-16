@@ -13,6 +13,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\RateLimitException;
 use Joomla\AI\Exception\QuotaExceededException;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\ModerationInterface;
 
@@ -406,7 +407,7 @@ abstract class AbstractProvider implements ProviderInterface
      * @param   string  $jsonString  The JSON string to parse
      * 
      * @return  array  The parsed JSON data
-     * @throws  \Exception  If JSON parsing fails
+     * @throws  UnserializableResponseException  If JSON parsing fails
      * @since  ___DEPLOY_VERSION___
      */
     protected function parseJsonResponse(string $jsonString): array
@@ -414,7 +415,7 @@ abstract class AbstractProvider implements ProviderInterface
         $decoded = json_decode($jsonString, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('Invalid JSON response: ' . json_last_error_msg());
+            throw new UnserializableResponseException($this->getName(), $jsonString, json_last_error_msg(), 422);
         }
         
         return $decoded;
