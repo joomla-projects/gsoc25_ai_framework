@@ -580,7 +580,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function speech(string $text, string $model, string $voice, array $options = []): Response    
+    public function speech(string $text, array $options = []): Response    
     {
         // Apply moderation to the text input for speech generation
         $isBlocked = $this->moderateInput($text, []);
@@ -589,7 +589,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             throw new \Exception('Content flagged by moderation system and blocked.');
         }
 
-        $payload = $this->buildSpeechPayload($text, $model, $voice, $options);
+        $payload = $this->buildSpeechPayload($text, $options);
 
         $endpoint = $this->getAudioSpeechEndpoint();
         $headers = $this->buildHeaders();
@@ -608,9 +608,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  Response  The AI response containing transcribed text
      * @since   __DEPLOY_VERSION__
      */
-    public function transcribe(string $audioFile, string $model, array $options = []): Response
+    public function transcribe(string $audioFile, array $options = []): Response
     {
-        $payload = $this->buildTranscriptionPayload($audioFile, $model, $options);
+        $payload = $this->buildTranscriptionPayload($audioFile, $options);
         
         $headers = $this->buildMultipartHeaders();
         
@@ -633,9 +633,9 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  Response  Translation response
      * @since   __DEPLOY_VERSION__
      */
-    public function translate(string $audioFile, string $model, array $options = []): Response
+    public function translate(string $audioFile, array $options = []): Response
     {
-        $payload = $this->buildTranslationPayload($audioFile, $model, $options);
+        $payload = $this->buildTranslationPayload($audioFile, $options);
 
         $headers = $this->buildMultipartHeaders();
 
@@ -916,7 +916,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageRequestPayload(string $prompt, array $options): array
     {
-        $model = $options['model'] ?? 'dall-e-2';
+        $model = $options['model'] ?? $this->getOption('model', 'dall-e-2');
 
         if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
             throw InvalidArgumentException::invalidModel($model, 'openai', self::IMAGE_MODELS, 'image generation');
@@ -970,7 +970,11 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             }
             $payload['response_format'] = $options['response_format'];
         }
-        
+
+        if(!isset($options['response_format'])) {
+            $payload['response_format'] = 'b64_json';
+        }
+
         // gpt-image-1 specific parameters
         if ($model === 'gpt-image-1') {
             if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
@@ -1058,6 +1062,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             }
             $payload['response_format'] = $options['response_format'];
         }
+        
+        if(!isset($options['response_format'])) {
+            $payload['response_format'] = 'b64_json';
+        }
 
         if (isset($options['user'])) {
             $payload['user'] = $options['user'];
@@ -1078,7 +1086,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageEditPayload($images, string $prompt, array $options): array
     {
-        $model = $options['model'] ?? 'dall-e-2';
+        $model = $options['model'] ??  $this->getOption('model', 'dall-e-2');
 
         // Only dall-e-2 and gpt-image-1 support image editing
         if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
@@ -1146,6 +1154,10 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $payload['response_format'] = $options['response_format'];
         }
         
+        if(!isset($options['response_format'])) {
+            $payload['response_format'] = 'b64_json';
+        }
+        
         // gpt-image-1 specific parameters
         if ($model === 'gpt-image-1') {
             if (isset($options['background']) && !in_array($options['background'], ['transparent', 'opaque', 'auto'])) {
@@ -1189,21 +1201,24 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  array  The request payload.
      * @since   __DEPLOY_VERSION__
      */
-    private function buildSpeechPayload(string $text, string $model, string $voice, array $options): array
+    private function buildSpeechPayload(string $text, array $options): array
     {
-        // Validate input text
-        if (strlen($text) > 4096) {
-            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', 'Speech input text cannot exceed 4096 characters, got: ' . strlen($text) . ' characters.', ['max_length' => 4096, 'actual_length' => strlen($text)]);
-        }
-        
+        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini-tts');
+        $voice = $options['voice'] ?? $this->getOption('voice', 'alloy');
+
         // Validate model
         if (!in_array($model, self::TTS_MODELS)) {
             throw InvalidArgumentException::invalidModel($model, 'openai', self::TTS_MODELS, 'text-to-speech');
         }
-        
+
         // Validate voice
         if (!in_array($voice, self::VOICES)) {
             throw InvalidArgumentException::invalidVoice($voice, self::VOICES, 'openai');
+        }
+
+        // Validate input text
+        if (strlen($text) > 4096) {
+            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', 'Speech input text cannot exceed 4096 characters, got: ' . strlen($text) . ' characters.', ['max_length' => 4096, 'actual_length' => strlen($text)]);
         }
         
         $payload = [
@@ -1260,10 +1275,12 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function buildTranscriptionPayload(string $audioFile, string $model, array $options): array
+    private function buildTranscriptionPayload(string $audioFile, array $options): array
     {
         // Validate audio file
         $this->validateAudioFile($audioFile);
+
+        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-transcribe');
         
         // Validate model
         if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
@@ -1368,11 +1385,13 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function buildTranslationPayload(string $audioFile, string $model, array $options): array
+    private function buildTranslationPayload(string $audioFile, array $options): array
     {
         // Validate audio file
         $this->validateAudioFile($audioFile);
         
+        $model = $options['model'] ?? $this->getOption('model', 'whisper-1');
+
         // Validate model
         if ($model !== 'whisper-1') {
             throw InvalidArgumentException::invalidModel($model, 'openai', ['whisper-1'], 'translation');
@@ -1407,7 +1426,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         return $payload;
     }
 
-    
     /**
      * Build request payload for embeddings.
      *

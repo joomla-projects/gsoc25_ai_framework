@@ -27,9 +27,20 @@ class RateLimitException extends AIException
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function __construct(string $provider, string $message, array $context = [], ?int $httpStatusCode = null, ?string $providerErrorCode = null)
+    public function __construct(string $provider, array $errorData, int $httpStatusCode)
     {
+        $context = ['error_data' => $errorData];
+        $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;
         $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? 'Rate Limit Exceeded';
+        $message = $errorData['message'] ?? $errorData['error']['message'] ?? $errorData['error'] ?? null;
+
+        if (is_array($message)) {
+            $message = implode('. ', $message);
+        }
+        if (!$message) {
+            $code = $providerErrorCode;
+            $message = $code ? "Error: $code" : 'Rate limit exceeded error';
+        }
 
         $detailedMessage = $this->buildDetailedMessage($provider, $errorType, $message, $httpStatusCode, $providerErrorCode);
 

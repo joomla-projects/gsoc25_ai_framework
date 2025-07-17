@@ -20,11 +20,13 @@ try {
     echo "-------------------------------\n";
 
     $text = "Hello world! This is a test of the OpenAI text-to-speech capability.";
-    $model = 'tts-1';
-    $voice = 'alloy';
-    
-    $response = $provider->speech($text, $model, $voice);
-    
+    $options = [
+        'model' => 'tts-1',
+        'voice' => 'alloy',
+    ];
+
+    $response = $provider->speech($text, $options);
+
     echo "Provider: " . $response->getProvider() . "\n";
 
     $metadata = $response->getMetadata();
@@ -35,8 +37,7 @@ try {
     echo "Audio Size: " . $metadata['size_bytes'] . " bytes\n";
     
     // Save audio to file
-    $audioData = $response->getContent();
-    file_put_contents('output/speech_test_1.mp3', $audioData);
+    $response->saveContentToFile('output/speech_test_1.mp3');
     echo "Audio saved as 'output/speech_test_1.mp3'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";
@@ -46,14 +47,14 @@ try {
     echo "--------------------------------------\n";
     
     $text2 = "Hello world! This is a test of the OpenAI text-to-speech capability. This is a test with a different voice and WAV format.";
-    $model2 = 'tts-1-hd';
-    $voice2 = 'nova';
     $options2 = [
+        'model' => 'tts-1-hd',
+        'voice' => 'nova',
         'response_format' => 'wav',
         'speed' => 1.2
     ];
 
-    $response2 = $provider->speech($text2, $model2, $voice2, $options2);
+    $response2 = $provider->speech($text2, $options2);
     
     $metadata2 = $response2->getMetadata();
     echo "Model Used: " . $metadata2['model'] . "\n";
@@ -64,8 +65,7 @@ try {
     echo "Audio Size: " . $metadata2['size_bytes'] . " bytes\n";
     
     // Save WAV file
-    $audioData2 = $response2->getContent();
-    file_put_contents('output/speech_test_2.wav', $audioData2);
+    $response2->saveContentToFile('output/speech_test_2.wav');
     echo "Audio saved as 'output/speech_test_2.wav'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";
@@ -75,15 +75,15 @@ try {
     echo "----------------------------------------\n";
     
     $text3 = "Hello world! This is a test of the OpenAI text-to-speech capability. This is a test with GPT-4o-mini-tts model and specific instructions to speak in a cheerful and professional customer service tone in the voice coral.";
-    $model3 = 'gpt-4o-mini-tts';
-    $voice3 = 'coral';
     $options3 = [
+        'model' => 'gpt-4o-mini-tts',
+        'voice' => 'coral',
         'instructions' => 'Speak in a cheerful and professional customer service tone.',
         'response_format' => 'mp3',
         'speed' => 0.9
     ];
     
-    $response3 = $provider->speech($text3, $model3, $voice3, $options3);
+    $response3 = $provider->speech($text3, $options3);
     
     $metadata3 = $response3->getMetadata();
     echo "Model Used: " . $metadata3['model'] . "\n";
@@ -95,8 +95,7 @@ try {
     echo "Instructions Used: " . ($metadata3['instructions'] ?? 'None') . "\n";
     
     // Save audio file
-    $audioData3 = $response3->getContent();
-    file_put_contents('output/speech_test_3.mp3', $audioData3);
+    $response3->saveContentToFile('output/speech_test_3.mp3');
     echo "Audio saved as 'output/speech_test_3.mp3'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";

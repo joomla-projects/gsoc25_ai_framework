@@ -29,7 +29,7 @@ interface AudioInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function speech(string $text, string $model, string $voice, array $options = []): Response;
+    public function speech(string $text, array $options = []): Response;
 
     /**
      * Get available voices for speech generation.
@@ -65,7 +65,7 @@ interface AudioInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function transcribe(string $audioFile, string $model, array $options = []): Response;
+    public function transcribe(string $audioFile, array $options = []): Response;
 
     /**
      * Translate audio to English text.
@@ -77,5 +77,5 @@ interface AudioInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function translate(string $audioFile, string $model, array $options = []): Response;
+    public function translate(string $audioFile, array $options = []): Response;
 }

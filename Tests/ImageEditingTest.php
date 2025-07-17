@@ -25,7 +25,6 @@ try {
 
     $editOptions = [
         'model' => 'dall-e-2',
-        'image' => $imagePath,
         'mask' => $maskImagePath,
         'response_format' => 'url'
     ];

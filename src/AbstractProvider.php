@@ -382,9 +382,9 @@ abstract class AbstractProvider implements ProviderInterface
                     
                 case 429:
                     if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') ||str_contains(strtolower($message), 'billing')) {
-                        throw new QuotaExceededException($this->getName(), $message, ['error_data' => $errorData], $response->code, $providerErrorCode);
+                        throw new QuotaExceededException($this->getName(), $errorData, $response->code);
                     } elseif (str_contains(strtolower($message), 'rate') || str_contains(strtolower($message), 'limit') || str_contains(strtolower($message), 'too many requests')) {
-                        throw new RateLimitException($this->getName(), $message, ['error_data' => $errorData], $response->code, $providerErrorCode);
+                        throw new RateLimitException($this->getName(), $errorData, $response->code);
                     }
                     
                 default:

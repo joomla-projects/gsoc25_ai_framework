@@ -78,6 +78,71 @@ class Response
     }
 
     /**
+     * Save the response content to file(s) based on response format.
+     *
+     * @param string $filename  The base filename.
+     */
+    public function saveContentToFile(string $filename)
+    {
+        $metadata = $this->getMetadata();
+        $format   = $metadata['response_format'] ?? null;
+        $content  = $this->getContent();
+
+        // Handle images with base64 data
+        if ($format === 'b64_json') {
+            $savedFiles = [];
+            $imageCount = $metadata['image_count'] ?? 1;
+            $dir = pathinfo($filename, PATHINFO_DIRNAME);
+            $baseName   = pathinfo($filename, PATHINFO_FILENAME);
+            $ext        = pathinfo($filename, PATHINFO_EXTENSION) ?: 'png';
+
+            $data = json_decode($content, true);
+            if ($imageCount === 1 && is_string($content)) {
+                file_put_contents($filename, base64_decode($content));
+                $savedFiles[] = $filename;
+            } elseif (is_array($data)) {
+                foreach ($data as $index => $b64) {
+                    $file = ($dir !== '.' ? $dir . DIRECTORY_SEPARATOR : '') . $baseName . '_' . ($index + 1) . '.' . $ext;
+                    file_put_contents($file, base64_decode($b64));
+                    $savedFiles[] = $file;
+                }
+            }
+            return $savedFiles;
+        }
+
+        // Handle images with URLs
+        if ($format === 'url') {
+            $imageCount = $metadata['image_count'] ?? 1;
+            $data = json_decode($content, true);
+
+            $lines = [];
+            if ($imageCount === 1 && is_string($content)) {
+                $lines[] = "  Image URL: " . $content;
+            } elseif (is_array($data)) {
+                foreach ($data as $index => $url) {
+                    if (is_array($url) && isset($url['url'])) {
+                        $url = $url['url'];
+                    }
+                    $lines[] = "  Image " . ($index + 1) . ": " . $url;
+                }
+            }
+
+            if (!empty($lines)) {
+                file_put_contents($filename, implode(PHP_EOL, $lines));
+                return [$filename];
+            }
+        }
+
+        // For all other content
+        if ($content !== null) {
+            file_put_contents($filename, $content);
+            return [$filename];
+        }
+
+        return false;
+    }
+
+    /**
      * Get the metadata of the response.
      *
      * @return  array  The metadata of the response.

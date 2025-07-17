@@ -20,9 +20,8 @@ try {
     
     $testText = "Hello world! This is a test of the OpenAI transcription functionality. We are testing speech to text conversion with the Whisper model.";
 
-    $speechResponse = $provider->speech($testText, 'tts-1', 'alloy', ['response_format' => 'wav']);
-    $audioData = $speechResponse->getContent();
-    file_put_contents('test_files/test_audio.wav', $audioData);
+    $speechResponse = $provider->speech($testText, ['model' => 'tts-1', 'voice' => 'alloy', 'response_format' => 'wav']);
+    $speechResponse->saveContentToFile('test_files/test_audio.wav');
     echo "Audio file created: test_files/test_audio.wav (" . strlen($audioData) . " bytes)\n\n";
     
     echo str_repeat("=", 60) . "\n\n";
@@ -31,13 +30,15 @@ try {
     echo "Test 1: Basic Transcription (Whisper-1)\n";
     echo "---------------------------------------\n";
     
-    $model = 'whisper-1';
     $audioFile = 'test_files/test_audio.wav';
+    $options = [
+        'model' => 'whisper-1',
+    ];
     
     echo "Audio File: $audioFile\n";
-    
-    $response1 = $provider->transcribe($audioFile, $model);
-        
+
+    $response1 = $provider->transcribe($audioFile, $options);
+
     $metadata1 = $response1->getMetadata();
     echo "Model Used: " . $metadata1['model'] . "\n";
     echo "Response Format: " . $metadata1['response_format'] . "\n";
@@ -63,7 +64,8 @@ try {
         echo str_repeat("-", 20) . "\n";
         
         try {
-            $response = $provider->transcribe($audioFile, 'whisper-1', [
+            $response = $provider->transcribe($audioFile, [
+                'model' => 'whisper-1',
                 'response_format' => $format
             ]);
             
