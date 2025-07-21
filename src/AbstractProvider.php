@@ -366,27 +366,27 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function validateResponse($response): bool
     {
-        if ($response->code < 200 || $response->code >= 300) {
-            $responseBody = $response->body;
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            $responseBody = $response->getBody();
             $errorData = json_decode($responseBody, true) ?? ['message' => $responseBody];
             $message = $errorData['message'] ?? $errorData['error']['message'] ?? 'Unknown error';
             $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? $errorData['type'] ?? $errorData['error']['type'] ?? null;
 
             // Handle specific HTTP status codes with appropriate exceptions
-            switch ($response->code) {
+            switch ($response->getStatusCode()) {
                 case 401:
                 case 403:
-                    throw new AuthenticationException($this->getName(), $errorData, $response->code);
+                    throw new AuthenticationException($this->getName(), $errorData, $response->getStatusCode());
                     
                 case 429:
                     if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') ||str_contains(strtolower($message), 'billing')) {
-                        throw new QuotaExceededException($this->getName(), $errorData, $response->code);
+                        throw new QuotaExceededException($this->getName(), $errorData, $response->getStatusCode());
                     } elseif (str_contains(strtolower($message), 'rate') || str_contains(strtolower($message), 'limit') || str_contains(strtolower($message), 'too many requests')) {
-                        throw new RateLimitException($this->getName(), $errorData, $response->code);
+                        throw new RateLimitException($this->getName(), $errorData, $response->getStatusCode());
                     }
                     
                 default:
-                    throw new ProviderException($this->getName(), $errorData, $response->code, $providerErrorCode);
+                    throw new ProviderException($this->getName(), $errorData, $response->getStatusCode(), $providerErrorCode);
             }
         }
     

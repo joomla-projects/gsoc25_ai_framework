@@ -268,7 +268,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
     {
         $headers = $this->buildHeaders();
         $response = $this->makeGetRequest('https://api.openai.com/v1/models', $headers);
-        $data = $this->parseJsonResponse($response->body);
+        $data = $this->parseJsonResponse($response->getBody());
         
         return array_column($data['data'], 'id');
     }
@@ -442,7 +442,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseOpenAIResponse($httpResponse->body);
+        return $this->parseOpenAIResponse($httpResponse->getBody());
     }
 
     /**
@@ -479,7 +479,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseOpenAIResponse($httpResponse->body);
+        return $this->parseOpenAIResponse($httpResponse->getBody());
     }
 
     /**
@@ -510,7 +510,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseImageResponse($httpResponse->body);
+        return $this->parseImageResponse($httpResponse->getBody());
     }
 
     /**
@@ -534,7 +534,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseImageResponse($httpResponse->body);
+        return $this->parseImageResponse($httpResponse->getBody());
     }
 
     /**
@@ -566,7 +566,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseImageResponse($httpResponse->body);
+        return $this->parseImageResponse($httpResponse->getBody());
     }
 
     /**
@@ -595,7 +595,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $headers = $this->buildHeaders();
         $httpResponse = $this->makePostRequest($endpoint, json_encode($payload), $headers);
         
-        return $this->parseAudioResponse($httpResponse->body, $payload);
+        return $this->parseAudioResponse($httpResponse->getBody(), $payload);
     }
 
     /**
@@ -620,7 +620,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
 
-        return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Transcription');
+        return $this->parseAudioTextResponse($httpResponse->getBody(), $payload, 'Transcription');
     }
 
     /**
@@ -645,7 +645,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
 
-        return $this->parseAudioTextResponse($httpResponse->body, $payload, 'Translation');
+        return $this->parseAudioTextResponse($httpResponse->getBody(), $payload, 'Translation');
     }
 
     /**
@@ -677,7 +677,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
 
-        return $this->parseEmbeddingResponse($httpResponse->body, $payload);
+        return $this->parseEmbeddingResponse($httpResponse->getBody(), $payload);
     }
 
     /**
@@ -711,7 +711,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
 
-        $data = $this->parseJsonResponse($httpResponse->body);
+        $data = $this->parseJsonResponse($httpResponse->getBody());
 
         return $data;
     }
