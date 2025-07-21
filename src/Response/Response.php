@@ -8,6 +8,10 @@
  */
 
 namespace Joomla\AI\Response;
+    
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
+use Joomla\Filesystem\Path;
 
 /**
  * AI response data object class.
@@ -81,9 +85,20 @@ class Response
      * Save the response content to file(s) based on response format.
      *
      * @param string $filename  The base filename.
+     *
+     * @throws \RuntimeException
+     * @since  __DEPLOY_VERSION__
      */
     public function saveContentToFile(string $filename)
     {
+        // Create directory if it doesn't exist
+        $dir = dirname($filename);
+        if (!is_dir($dir)) {
+            if (!Folder::create($dir)) {
+                throw new \RuntimeException('Failed to create directory: ' . $dir);
+            }
+        }
+
         $metadata = $this->getMetadata();
         $format   = $metadata['response_format'] ?? null;
         $content  = $this->getContent();
@@ -92,19 +107,23 @@ class Response
         if ($format === 'b64_json') {
             $savedFiles = [];
             $imageCount = $metadata['image_count'] ?? 1;
-            $dir = pathinfo($filename, PATHINFO_DIRNAME);
-            $baseName   = pathinfo($filename, PATHINFO_FILENAME);
-            $ext        = pathinfo($filename, PATHINFO_EXTENSION) ?: 'png';
+            $dir = Path::clean(dirname($filename));
+            $baseName = pathinfo($filename, PATHINFO_FILENAME);
+            $ext = pathinfo($filename, PATHINFO_EXTENSION) ?: 'png';
 
             $data = json_decode($content, true);
             if ($imageCount === 1 && is_string($content)) {
-                file_put_contents($filename, base64_decode($content));
-                $savedFiles[] = $filename;
+                $decodedContent = base64_decode($content);
+                if (File::write($filename, $decodedContent)) {
+                    $savedFiles[] = $filename;
+                }
             } elseif (is_array($data)) {
                 foreach ($data as $index => $b64) {
-                    $file = ($dir !== '.' ? $dir . DIRECTORY_SEPARATOR : '') . $baseName . '_' . ($index + 1) . '.' . $ext;
-                    file_put_contents($file, base64_decode($b64));
-                    $savedFiles[] = $file;
+                    $file = Path::clean($dir . '/' . $baseName . '_' . ($index + 1) . '.' . $ext);
+                    $decodedContent = base64_decode($b64);
+                    if (File::write($file, $decodedContent)) {
+                        $savedFiles[] = $file;
+                    }
                 }
             }
             return $savedFiles;
@@ -128,15 +147,24 @@ class Response
             }
 
             if (!empty($lines)) {
-                file_put_contents($filename, implode(PHP_EOL, $lines));
+                if (File::write($filename, implode(PHP_EOL, $lines))) {
+                    return [$filename];
+                }
+            }
+        }
+
+        // For binary content (like audio files)
+        if (isset($metadata['data_type']) && $metadata['data_type'] === 'binary_audio') {
+            if (File::write($filename, $content)) {
                 return [$filename];
             }
         }
 
         // For all other content
         if ($content !== null) {
-            file_put_contents($filename, $content);
-            return [$filename];
+            if (File::write($filename, $content)) {
+                return [$filename];
+            }
         }
 
         return false;
