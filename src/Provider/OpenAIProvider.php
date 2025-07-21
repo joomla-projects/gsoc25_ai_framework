@@ -557,7 +557,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
 
         $payload = $this->buildImageEditPayload($images, $prompt, $options);
-        
+
         $headers = $this->buildMultipartHeaders();
         
         $httpResponse = $this->makeMultipartPostRequest(
@@ -964,14 +964,14 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         if (isset($options['response_format'])) {
             if ($model === 'gpt-image-1') {
                 throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'response_format is not supported for gpt-image-1 (always returns base64).', ['model' => 'gpt-image-1', 'fixed_format' => 'base64']);
-            }
-            if (!in_array($options['response_format'], ['url', 'b64_json'])) {
+            } elseif (!in_array($options['response_format'], ['url', 'b64_json'])) {
                 throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'Response format must be either "url" or "b64_json".', ['valid_values' => ['url', 'b64_json']]);
+            } else {
+                $payload['response_format'] = $options['response_format'];
             }
-            $payload['response_format'] = $options['response_format'];
         }
 
-        if(!isset($options['response_format'])) {
+        if (!isset($options['response_format']) && $model !== 'gpt-image-1') {
             $payload['response_format'] = 'b64_json';
         }
 
@@ -1146,15 +1146,15 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         
         if (isset($options['response_format'])) {
             if ($model === 'gpt-image-1') {
-                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'response_format is not supported for gpt-image-1 (always returns base64).');
-            }
-            if (!in_array($options['response_format'], ['url', 'b64_json'])) {
+                throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'response_format is not supported for gpt-image-1 (always returns base64).', ['model' => 'gpt-image-1', 'fixed_format' => 'base64']);
+            } elseif (!in_array($options['response_format'], ['url', 'b64_json'])) {
                 throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'openai', 'Response format must be either "url" or "b64_json".', ['valid_values' => ['url', 'b64_json']]);
+            } else {
+                $payload['response_format'] = $options['response_format'];
             }
-            $payload['response_format'] = $options['response_format'];
         }
-        
-        if(!isset($options['response_format'])) {
+
+        if (!isset($options['response_format']) && $model !== 'gpt-image-1') {
             $payload['response_format'] = 'b64_json';
         }
         

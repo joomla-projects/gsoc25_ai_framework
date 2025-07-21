@@ -25,14 +25,17 @@ class ProviderException extends AIException
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function __construct(string $provider, string|array $errorData, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null) {
+    public function __construct(string $provider, string|array $errorData, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null) 
+    {
+        $context = ['error_data' => $errorData];
+        $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;
+        $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? 'Unknown Error';
+
         if (is_array($errorData)) {
-            $message = $errorData['message'] ?? $errorData['error']['message'] ?? 'Unknown provider error';
+            $message = $errorData['message'] ?? $errorData['error']['message'] ?? $errorData['error'] ?? 'Unknown provider error';
         } else {
             $message = $errorData;
         }
-        $context = is_array($errorData) ? ['error_data' => $errorData] : [];
-        $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? 'Unknown Error';
 
         $detailedMessage = $this->buildDetailedMessage($provider, $errorType, $message, $httpStatusCode, $providerErrorCode);
         

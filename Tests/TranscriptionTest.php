@@ -22,7 +22,7 @@ try {
 
     $speechResponse = $provider->speech($testText, ['model' => 'tts-1', 'voice' => 'alloy', 'response_format' => 'wav']);
     $speechResponse->saveContentToFile('test_files/test_audio.wav');
-    echo "Audio file created: test_files/test_audio.wav (" . strlen($audioData) . " bytes)\n\n";
+    echo "Audio file created: test_files/test_audio.wav\n\n";
     
     echo str_repeat("=", 60) . "\n\n";
 

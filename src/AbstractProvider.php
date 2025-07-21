@@ -52,9 +52,7 @@ abstract class AbstractProvider implements ProviderInterface
      */
     public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
     {
-        // To do: Exception Handeling Code
         // Validate provider is suported
-        // Validate that $options is an array or implements ArrayAccess
         if (!\is_array($options) && !($options instanceof \ArrayAccess)) {
             throw new \InvalidArgumentException(
                 'The options param must be an array or implement the ArrayAccess interface.'

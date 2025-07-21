@@ -67,6 +67,7 @@ try {
     echo str_repeat("-", 40) . "\n";
 
     $text = "Hello world! This is a test of the OpenAI text-to-speech capability.";
+
     $response4 = $provider->speech($text);
     $response4->saveContentToFile('output/speech_4.mp3');
 
@@ -81,6 +82,7 @@ try {
     echo str_repeat("-", 40) . "\n";
     
     $audioFile = 'test_files/test_audio.wav';
+
     $response5 = $provider->transcribe($audioFile);
     $response5->getContent();
     $response5->saveContentToFile('output/transcribed.txt');
@@ -96,6 +98,7 @@ try {
     echo str_repeat("-", 40) . "\n";
 
     $testAudioFile = 'test_files/test_german_audio.wav';
+    
     $response6 = $provider->translate($testAudioFile);
     echo $response6->getContent();
     $response6->saveContentToFile('output/translated.txt');
