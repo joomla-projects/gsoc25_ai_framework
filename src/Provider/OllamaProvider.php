@@ -323,9 +323,189 @@ class OllamaProvider extends AbstractProvider
         
         if (!in_array($modelName, $availableModels)) {
             echo "Model $modelName not found locally. Attempting to pull...\n";
-            return $this->pullModel($modelName, true, false, $force);
+            return $this->pullModel($modelName, true, false);
         }
         
         return true;
+    }
+
+    /**
+     * Generate a completion for a given prompt
+     *
+     * @param   string  $modelName   The model name to use for generation
+     * @param   string  $prompt      The prompt to generate a response for
+     * @param   array   $options     Additional options for generation
+     * 
+     * @return  Response  The generation response
+     * @throws  InvalidArgumentException  If model doesn't exist
+     * @throws  ProviderException        If generation fails
+     * @since   __DEPLOY_VERSION__
+     */
+    public function generate(string $prompt, array $options = []): Response
+    {
+        $this->validateConnection();
+
+        // Get available models first
+        $availableModels = $this->getAvailableModels();
+        
+        // Handle model selection and installation
+        if (isset($options['model'])) {
+            $modelName = $options['model'];
+            if (!$this->checkModelExists($modelName, $availableModels)) {
+                echo "Model '$modelName' not found locally. Installing...\n";
+                $this->pullModel($modelName);
+            } else {
+                echo "Using specified model: $modelName\n";
+            }
+        } else {
+            $modelName = 'llama2';  // Default model
+            if (!$this->checkModelExists($modelName, $availableModels)) {
+                echo "Installing default model 'llama2'...\n";
+                $this->pullModel($modelName);
+            } else {
+                echo "Using default model 'llama2' since no model specified\n";
+            }
+        }
+        
+        $requestData = [
+            'model' => $modelName,
+            'prompt' => $prompt
+        ];
+        
+        // Add optional parameters
+        if (isset($options['suffix'])) {
+            $requestData['suffix'] = $options['suffix'];
+        }
+        
+        if (isset($options['images']) && is_array($options['images'])) {
+            $requestData['images'] = $options['images'];
+        }
+        
+        if (isset($options['think'])) {
+            $requestData['think'] = (bool) $options['think'];
+        }
+        
+        if (isset($options['format'])) {
+            $requestData['format'] = $options['format'];
+        }
+        
+        if (isset($options['system'])) {
+            $requestData['system'] = $options['system'];
+        }
+        
+        if (isset($options['template'])) {
+            $requestData['template'] = $options['template'];
+        }
+        
+        // Default to streaming unless explicitly disabled
+        $stream = $options['stream'] ?? true;
+        $requestData['stream'] = $stream;
+        
+        if (isset($options['raw'])) {
+            $requestData['raw'] = (bool) $options['raw'];
+        }
+        
+        if (isset($options['keep_alive'])) {
+            $requestData['keep_alive'] = $options['keep_alive'];
+        }
+        
+        try {
+            $jsonData = json_encode($requestData);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new ProviderException(
+                    $this->getName(),
+                    ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
+                );
+            }
+
+            $endpoint = $this->getGenerateEndpoint();
+
+            $response = $this->makePostRequest($endpoint, $jsonData);
+            $body = $response->getBody();
+            $fullContent = (string) $body;
+            
+            if (!$stream) {
+                // Non-streaming response - return single JSON object
+                $data = $this->parseJsonResponse($fullContent);
+                
+                if (isset($data['error'])) {
+                    throw new ProviderException(
+                        $this->getName(),
+                        ['message' => $data['error']]
+                    );
+                }
+                
+                return $this->createGenerateResponse($data);
+            } else {
+                // Streaming response - process stream of JSON objects
+                return $this->processStreamingGenerate($fullContent);
+            }
+            
+        } catch (InvalidArgumentException $e) {
+            throw $e;
+        } catch (ProviderException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to generate completion: ' . $e->getMessage()]
+            );
+        }
+    }
+
+    /**
+     * Process streaming generate response
+     *
+     * @param   string  $content  The streaming response content
+     * @return  Response  The processed response
+     * @throws  ProviderException  If processing fails
+     * @since   __DEPLOY_VERSION__
+     */
+    private function processStreamingGenerate(string $content): Response
+    {
+        $lines = explode("\n", $content);
+        $fullResponse = '';
+        $finalData = null;
+        
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line)) continue;
+            
+            $data = json_decode($line, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                continue;
+            }
+            
+            // Check for error in any part of the stream
+            if (isset($data['error'])) {
+                throw new ProviderException(
+                    $this->getName(),
+                    ['message' => $data['error']]
+                );
+            }
+            
+            // Accumulate response text
+            if (isset($data['response'])) {
+                $fullResponse .= $data['response'];
+            }
+            
+            // Check if this is the final response (done: true)
+            if (isset($data['done']) && $data['done'] === true) {
+                $finalData = $data;
+                break;
+            }
+        }
+        
+        if ($finalData === null) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Incomplete streaming response received']
+            );
+        }
+        
+        // Set the full accumulated response
+        $finalData['response'] = $fullResponse;
+        
+        return $this->createGenerateResponse($finalData);
     }
 }
