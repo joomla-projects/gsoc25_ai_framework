@@ -329,183 +329,190 @@ class OllamaProvider extends AbstractProvider
         return true;
     }
 
-    /**
-     * Generate a completion for a given prompt
-     *
-     * @param   string  $modelName   The model name to use for generation
-     * @param   string  $prompt      The prompt to generate a response for
-     * @param   array   $options     Additional options for generation
-     * 
-     * @return  Response  The generation response
-     * @throws  InvalidArgumentException  If model doesn't exist
-     * @throws  ProviderException        If generation fails
-     * @since   __DEPLOY_VERSION__
-     */
-    public function generate(string $prompt, array $options = []): Response
+    public function buildChatRequestPayload(string $message, array $options = [])
     {
         $this->validateConnection();
 
-        // Get available models first
         $availableModels = $this->getAvailableModels();
         
         // Handle model selection and installation
         if (isset($options['model'])) {
-            $modelName = $options['model'];
-            if (!$this->checkModelExists($modelName, $availableModels)) {
-                echo "Model '$modelName' not found locally. Installing...\n";
-                $this->pullModel($modelName);
+            $model = $options['model'];
+            if (!$this->checkModelExists($model, $availableModels)) {
+                echo "Model '$model' not found locally. Installing...\n";
+                $this->pullModel($model);
             } else {
-                echo "Using specified model: $modelName\n";
+                echo "Using specified model: $model\n";
             }
         } else {
-            $modelName = 'llama2';  // Default model
-            if (!$this->checkModelExists($modelName, $availableModels)) {
-                echo "Installing default model 'llama2'...\n";
-                $this->pullModel($modelName);
+            $model = $this->getOption('model', 'tinyllama');  // Default model
+            if (!$this->checkModelExists($model, $availableModels)) {
+                echo "Installing default model $model...\n";
+                $this->pullModel($model);
             } else {
-                echo "Using default model 'llama2' since no model specified\n";
+                echo "Using default model $model since no model specified\n";
             }
         }
-        
-        $requestData = [
-            'model' => $modelName,
-            'prompt' => $prompt
+
+        if (isset($options['messages'])) {
+            $messages = $options['messages'];
+            if (!is_array($messages) || empty($messages)) {
+                throw InvalidArgumentException::invalidMessages('ollama', 'Messages must be a non-empty array.');
+            }
+            $this->validateMessages($messages);
+        } else {
+            $messages = [
+                [
+                    'role' => 'user',
+                    'content' => $message
+                ]
+            ];
+        }
+
+        $payload = [
+            'model' => $model,
+            'messages' => $messages,
+            'stream' => false
         ];
         
-        // Add optional parameters
-        if (isset($options['suffix'])) {
-            $requestData['suffix'] = $options['suffix'];
+        if (isset($options['stream'])) {
+            $payload['stream'] = (bool) $options['stream'];
         }
-        
-        if (isset($options['images']) && is_array($options['images'])) {
-            $requestData['images'] = $options['images'];
-        }
-        
-        if (isset($options['think'])) {
-            $requestData['think'] = (bool) $options['think'];
-        }
-        
-        if (isset($options['format'])) {
-            $requestData['format'] = $options['format'];
-        }
-        
-        if (isset($options['system'])) {
-            $requestData['system'] = $options['system'];
-        }
-        
-        if (isset($options['template'])) {
-            $requestData['template'] = $options['template'];
-        }
-        
-        // Default to streaming unless explicitly disabled
-        $stream = $options['stream'] ?? true;
-        $requestData['stream'] = $stream;
-        
-        if (isset($options['raw'])) {
-            $requestData['raw'] = (bool) $options['raw'];
-        }
-        
-        if (isset($options['keep_alive'])) {
-            $requestData['keep_alive'] = $options['keep_alive'];
-        }
-        
-        try {
-            $jsonData = json_encode($requestData);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new ProviderException(
-                    $this->getName(),
-                    ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
-                );
-            }
 
-            $endpoint = $this->getGenerateEndpoint();
-
-            $response = $this->makePostRequest($endpoint, $jsonData);
-            $body = $response->getBody();
-            $fullContent = (string) $body;
-            
-            if (!$stream) {
-                // Non-streaming response - return single JSON object
-                $data = $this->parseJsonResponse($fullContent);
-                
-                if (isset($data['error'])) {
-                    throw new ProviderException(
-                        $this->getName(),
-                        ['message' => $data['error']]
-                    );
-                }
-                
-                return $this->createGenerateResponse($data);
-            } else {
-                // Streaming response - process stream of JSON objects
-                return $this->processStreamingGenerate($fullContent);
-            }
-            
-        } catch (InvalidArgumentException $e) {
-            throw $e;
-        } catch (ProviderException $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            throw new ProviderException(
-                $this->getName(),
-                ['message' => 'Failed to generate completion: ' . $e->getMessage()]
-            );
-        }
+        return $payload;
     }
 
-    /**
-     * Process streaming generate response
-     *
-     * @param   string  $content  The streaming response content
-     * @return  Response  The processed response
-     * @throws  ProviderException  If processing fails
-     * @since   __DEPLOY_VERSION__
-     */
-    private function processStreamingGenerate(string $content): Response
+    public function chat(string $message, array $options = []): Response
     {
-        $lines = explode("\n", $content);
-        $fullResponse = '';
-        $finalData = null;
+        $payload = $this->buildChatRequestPayload($message, $options);
+        
+        $endpoint = $this->getChatEndpoint();
+        
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
+            );
+        }
+        
+        $httpResponse = $this->makePostRequest(
+            $endpoint, 
+            $jsonData,
+        );
+                    
+        // Check if this is a streaming response
+        if (isset($payload['stream']) && $payload['stream'] === true) {
+            return $this->parseOllamaStreamingResponse($httpResponse->getBody());
+        }
+        
+        return $this->parseOllamaResponse($httpResponse->getBody());
+    }
+
+    private function parseOllamaStreamingResponse(string $responseBody): Response
+    {
+        $lines = explode("\n", $responseBody);
+        $fullContent = '';
+        $lastMetadata = [];
         
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
             
             $data = json_decode($line, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
                 continue;
             }
             
-            // Check for error in any part of the stream
-            if (isset($data['error'])) {
-                throw new ProviderException(
-                    $this->getName(),
-                    ['message' => $data['error']]
-                );
+            // Accumulate content from each chunk
+            if (isset($data['message']['content'])) {
+                $fullContent .= $data['message']['content'];
             }
             
-            // Accumulate response text
-            if (isset($data['response'])) {
-                $fullResponse .= $data['response'];
-            }
-            
-            // Check if this is the final response (done: true)
-            if (isset($data['done']) && $data['done'] === true) {
-                $finalData = $data;
-                break;
+            // Keep track of the last metadata
+            if ($data['done'] === true) {
+                $lastMetadata = [
+                    'model' => $data['model'],
+                    'created_at' => $data['created_at'],
+                    'role' => $data['message']['role'],
+                    'done_reason' => $data['done_reason'] ?? null,
+                    'done' => $data['done'],
+                    'total_duration' => $data['total_duration'],
+                    'load_duration' => $data['load_duration'],
+                    'prompt_eval_count' => $data['prompt_eval_count'],
+                    'prompt_eval_duration' => $data['prompt_eval_duration'],
+                    'eval_count' => $data['eval_count'],
+                    'eval_duration' => $data['eval_duration']
+                ];
             }
         }
         
-        if ($finalData === null) {
-            throw new ProviderException(
-                $this->getName(),
-                ['message' => 'Incomplete streaming response received']
-            );
+        $statusCode = isset($lastMetadata['done_reason']) ? $this->determineAIStatusCode($lastMetadata) : 200;
+
+        return new Response(
+            $fullContent,
+            $this->getName(),
+            $lastMetadata,
+            $statusCode
+        );
+    }
+
+    private function parseOllamaResponse(string $responseBody): Response
+    {
+        $data = $this->parseJsonResponse($responseBody);
+        
+        if (isset($data['error'])) {
+            throw new ProviderException($this->getName(), $data);
         }
+
+        $content = $data['message']['content'] ?? '';
         
-        // Set the full accumulated response
-        $finalData['response'] = $fullResponse;
+        $statusCode = $this->determineAIStatusCode($data);
+
+        $metadata = [
+            'model' => $data['model'],
+            'created_at' => $data['created'] ?? time(),
+            'role' => $data['message']['role'],
+            'done_reason' => $data['done_reason'],
+            'done' => $data['done'],
+            'total_duration' => $data['total_duration'],
+            'load_duration' => $data['load_duration'],
+            'prompt_eval_count' => $data['prompt_eval_count'],
+            'prompt_eval_duration' => $data['prompt_eval_duration'],
+            'eval_count' => $data['eval_count'],
+            'eval_duration' => $data['eval_duration']
+        ];
+
+        return new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            $statusCode
+        );
+    }
+
+    private function determineAIStatusCode(array $data): int
+    {
+        $finishReason = $data['done_reason'];
         
-        return $this->createGenerateResponse($finalData);
+        switch ($finishReason) {
+            case 'stop':
+                return 200;
+                
+            case 'length':
+                return 206;
+                
+            case 'content_filter':
+                return 422;
+                
+            case 'tool_calls':
+            case 'function_call':
+                return 202;
+                
+            default:
+                return 200;
+        }
     }
 }
