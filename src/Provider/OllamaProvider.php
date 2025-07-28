@@ -403,13 +403,143 @@ class OllamaProvider extends AbstractProvider
                     
         // Check if this is a streaming response
         if (isset($payload['stream']) && $payload['stream'] === true) {
-            return $this->parseOllamaStreamingResponse($httpResponse->getBody());
+            return $this->parseOllamaStreamingResponse($httpResponse->getBody(), true);
         }
         
-        return $this->parseOllamaResponse($httpResponse->getBody());
+        return $this->parseOllamaResponse($httpResponse->getBody(), true);
     }
 
-    private function parseOllamaStreamingResponse(string $responseBody): Response
+    /**
+     * Build the request payload for the generate endpoint
+     *
+     * @param   string  $prompt   The prompt to generate a response for
+     * @param   array   $options  Additional options
+     * @return  array   The formatted payload
+     * @throws  InvalidArgumentException  If options are invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildGenerateRequestPayload(string $prompt, array $options = []): array
+    {
+        $this->validateConnection();
+
+        $availableModels = $this->getAvailableModels();
+        
+        // Handle model selection and installation
+        if (isset($options['model'])) {
+            $model = $options['model'];
+            if (!$this->checkModelExists($model, $availableModels)) {
+                echo "Model '$model' not found locally. Installing...\n";
+                $this->pullModel($model);
+            } else {
+                echo "Using specified model: $model\n";
+            }
+        } else {
+            $model = $this->getOption('model', 'tinyllama');  // Default model
+            if (!$this->checkModelExists($model, $availableModels)) {
+                echo "Installing default model $model...\n";
+                $this->pullModel($model);
+            } else {
+                echo "Using default model $model since no model specified\n";
+            }
+        }
+
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'stream' => false
+        ];
+        
+        // Handle optional parameters
+        if (isset($options['stream'])) {
+            $payload['stream'] = (bool) $options['stream'];
+        }
+        
+        if (isset($options['suffix'])) {
+            $payload['suffix'] = $options['suffix'];
+        }
+        
+        if (isset($options['images']) && is_array($options['images'])) {
+            $payload['images'] = $options['images'];
+        }
+        
+        if (isset($options['format'])) {
+            $payload['format'] = $options['format'];
+        }
+        
+        if (isset($options['options']) && is_array($options['options'])) {
+            $payload['options'] = $options['options'];
+        }
+        
+        if (isset($options['system'])) {
+            $payload['system'] = $options['system'];
+        }
+        
+        if (isset($options['template'])) {
+            $payload['template'] = $options['template'];
+        }
+        
+        if (isset($options['context'])) {
+            $payload['context'] = $options['context'];
+        }
+        
+        if (isset($options['raw'])) {
+            $payload['raw'] = (bool) $options['raw'];
+        }
+        
+        if (isset($options['keep_alive'])) {
+            $payload['keep_alive'] = $options['keep_alive'];
+        }
+        
+        return $payload;
+    }
+
+    /**
+     * Generate a completion for a given prompt
+     *
+     * @param   string    $prompt    The prompt to generate a response for
+     * @param   array     $options   Additional options
+     * @param   callable  $callback  Optional callback function for streaming responses
+     * @return  Response  The AI response
+     * @throws  ProviderException  If the request fails
+     * @since   __DEPLOY_VERSION__
+     */
+    public function generate(string $prompt, array $options = []): Response
+    {
+        $payload = $this->buildGenerateRequestPayload($prompt, $options);
+        
+        $endpoint = $this->getGenerateEndpoint();
+        
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
+            );
+        }
+        
+        $httpResponse = $this->makePostRequest(
+            $endpoint, 
+            $jsonData,
+        );
+                
+        // Check if this is a streaming response
+        if (isset($payload['stream']) && $payload['stream'] === true) {
+            return $this->parseOllamaStreamingResponse($httpResponse->getBody(), false);
+        }
+        
+        return $this->parseOllamaResponse($httpResponse->getBody(), false);
+    }
+
+    /**
+     * Parse a streaming response from Ollama API 
+     *
+     * @param   string  $responseBody  The raw response body
+     * @param   bool    $isChat        Whether this is a chat response (true) or generate response (false)
+     * 
+     * @return  Response  The parsed response
+     * @since   __DEPLOY_VERSION__
+     */
+    private function parseOllamaStreamingResponse(string $responseBody, bool $isChat = true): Response
     {
         $lines = explode("\n", $responseBody);
         $fullContent = '';
@@ -426,9 +556,19 @@ class OllamaProvider extends AbstractProvider
                 continue;
             }
             
-            // Accumulate content from each chunk
-            if (isset($data['message']['content'])) {
+            // Accumulate content from each chunk - handle both chat and generate formats
+            if ($isChat && isset($data['message']['content'])) {
                 $fullContent .= $data['message']['content'];
+                // $chunk = $data['message']['content'];
+                // $fullContent .= $chunk;
+                // echo $chunk;
+                // flush();
+            } elseif (!$isChat && isset($data['response'])) {
+                $fullContent .= $data['response'];
+                // $chunk = $data['response'];
+                // $fullContent .= $chunk;
+                // echo $chunk;
+                // flush();
             }
             
             // Keep track of the last metadata
@@ -436,7 +576,6 @@ class OllamaProvider extends AbstractProvider
                 $lastMetadata = [
                     'model' => $data['model'],
                     'created_at' => $data['created_at'],
-                    'role' => $data['message']['role'],
                     'done_reason' => $data['done_reason'] ?? null,
                     'done' => $data['done'],
                     'total_duration' => $data['total_duration'],
@@ -446,6 +585,16 @@ class OllamaProvider extends AbstractProvider
                     'eval_count' => $data['eval_count'],
                     'eval_duration' => $data['eval_duration']
                 ];
+                
+                // Add chat-specific metadata
+                if ($isChat && isset($data['message']['role'])) {
+                    $lastMetadata['role'] = $data['message']['role'];
+                }
+                
+                // Add generate-specific metadata
+                if (!$isChat && isset($data['context'])) {
+                    $lastMetadata['context'] = $data['context'];
+                }
             }
         }
         
@@ -459,7 +608,17 @@ class OllamaProvider extends AbstractProvider
         );
     }
 
-    private function parseOllamaResponse(string $responseBody): Response
+    /**
+     * Parse a non-streaming response from Ollama API (works for both chat and generate endpoints)
+     *
+     * @param   string  $responseBody  The raw response body
+     * @param   bool    $isChat        Whether this is a chat response (true) or generate response (false)
+     * 
+     * @return  Response  The parsed response
+     * @throws  ProviderException  If the response contains an error
+     * @since   __DEPLOY_VERSION__
+     */
+    private function parseOllamaResponse(string $responseBody, bool $isChat = true): Response
     {
         $data = $this->parseJsonResponse($responseBody);
         
@@ -467,23 +626,34 @@ class OllamaProvider extends AbstractProvider
             throw new ProviderException($this->getName(), $data);
         }
 
-        $content = $data['message']['content'] ?? '';
+        // Extract content based on whether it's a chat or generate response
+        $content = $isChat ? ($data['message']['content'] ?? '') : ($data['response'] ?? '');
         
-        $statusCode = $this->determineAIStatusCode($data);
+        $statusCode = isset($data['done_reason']) ? $this->determineAIStatusCode($data) : 200;
 
+        // Build common metadata
         $metadata = [
             'model' => $data['model'],
-            'created_at' => $data['created'] ?? time(),
-            'role' => $data['message']['role'],
-            'done_reason' => $data['done_reason'],
-            'done' => $data['done'],
-            'total_duration' => $data['total_duration'],
-            'load_duration' => $data['load_duration'],
-            'prompt_eval_count' => $data['prompt_eval_count'],
-            'prompt_eval_duration' => $data['prompt_eval_duration'],
-            'eval_count' => $data['eval_count'],
-            'eval_duration' => $data['eval_duration']
+            'created_at' => $data['created_at'] ?? $data['created'] ?? time(),
+            'done_reason' => $data['done_reason'] ?? null,
+            'done' => $data['done'] ?? true,
+            'total_duration' => $data['total_duration'] ?? 0,
+            'load_duration' => $data['load_duration'] ?? 0,
+            'prompt_eval_count' => $data['prompt_eval_count'] ?? 0,
+            'prompt_eval_duration' => $data['prompt_eval_duration'] ?? 0,
+            'eval_count' => $data['eval_count'] ?? 0,
+            'eval_duration' => $data['eval_duration'] ?? 0
         ];
+        
+        // Add chat-specific metadata
+        if ($isChat && isset($data['message']['role'])) {
+            $metadata['role'] = $data['message']['role'];
+        }
+        
+        // Add generate-specific metadata
+        if (!$isChat && isset($data['context'])) {
+            $metadata['context'] = $data['context'];
+        }
 
         return new Response(
             $content,
