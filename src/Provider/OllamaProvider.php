@@ -66,7 +66,10 @@ class OllamaProvider extends AbstractProvider
     }
 
     /**
-     * No API key needed for Ollama, but we need to ensure server is running
+     * Ensure server is running
+     * 
+     * @throws  AuthenticationException  If the server is not running
+     * @since  __DEPLOY_VERSION__
      */
     private function validateConnection(): void
     {
@@ -142,6 +145,36 @@ class OllamaProvider extends AbstractProvider
     }
 
     /**
+     * Check if a model exists in the available models list, handling name variations
+     *
+     * @param   string  $modelName        Model name to check
+     * @param   array   $availableModels  List of available models
+     * @return  bool    True if model exists
+     */
+    private function checkModelExists(string $modelName, array $availableModels): bool
+    {
+        // To Do: Improve logic
+        if (in_array($modelName, $availableModels)) {
+            return true;
+        }
+        
+        // Check with :latest suffix added
+        if (!str_ends_with($modelName, ':latest') && in_array($modelName . ':latest', $availableModels)) {
+            return true;
+        }
+        
+        // Check with :latest suffix removed
+        if (str_ends_with($modelName, ':latest')) {
+            $baseModelName = str_replace(':latest', '', $modelName);
+            if (in_array($baseModelName, $availableModels)) {
+                return true;
+            }
+        }
+                
+        return false;
+    }
+
+    /**
      * Pull a model from Ollama library
      *
      * @param   string  $modelName  Name of the model to pull
@@ -168,7 +201,6 @@ class OllamaProvider extends AbstractProvider
         $requestData = [
             'model' => $modelName
         ];
-        
         if ($insecure) {
             $requestData['insecure'] = true;
         }
@@ -217,7 +249,6 @@ class OllamaProvider extends AbstractProvider
                         strpos(strtolower($errorMessage), 'model') !== false && strpos(strtolower($errorMessage), 'not found') !== false ||
                         strpos(strtolower($errorMessage), 'manifest') !== false && strpos(strtolower($errorMessage), 'not found') !== false) {
                         
-                        
                         throw InvalidArgumentException::invalidModel(
                             $modelName,
                             $this->getName(),
@@ -262,11 +293,7 @@ class OllamaProvider extends AbstractProvider
                 }
                 
                 return true;
-            }
-            
-            // If no success and no explicit error
-            // throw new ProviderException($modelName, $this->getName());
-            
+            } 
         }  catch (InvalidArgumentException $e) {
             throw $e;
         } catch (ProviderException $e) {
@@ -277,37 +304,6 @@ class OllamaProvider extends AbstractProvider
                 ['message' => 'Failed to pull model: ' . $e->getMessage()]
             );
         }
-    }
-
-    /**
-     * Check if a model exists in the available models list, handling name variations
-     *
-     * @param   string  $modelName        Model name to check
-     * @param   array   $availableModels  List of available models
-     * @return  bool    True if model exists
-     */
-    private function checkModelExists(string $modelName, array $availableModels): bool
-    {
-        // To Do: Improve logic
-        // Direct match
-        if (in_array($modelName, $availableModels)) {
-            return true;
-        }
-        
-        // Check with :latest suffix added
-        if (!str_ends_with($modelName, ':latest') && in_array($modelName . ':latest', $availableModels)) {
-            return true;
-        }
-        
-        // Check with :latest suffix removed
-        if (str_ends_with($modelName, ':latest')) {
-            $baseModelName = str_replace(':latest', '', $modelName);
-            if (in_array($baseModelName, $availableModels)) {
-                return true;
-            }
-        }
-                
-        return false;
     }
 
     /**
@@ -329,6 +325,16 @@ class OllamaProvider extends AbstractProvider
         return true;
     }
 
+    /**
+     * Build the request payload for the chat endpoint
+     *
+     * @param   string  $message   The user message to send
+     * @param   array   $options  Additional options
+     * 
+     * @return  array   The request payload
+     * @throws  \InvalidArgumentException  If model does not support chat capability
+     * @since  __DEPLOY_VERSION__
+     */
     public function buildChatRequestPayload(string $message, array $options = [])
     {
         $this->validateConnection();
@@ -382,6 +388,16 @@ class OllamaProvider extends AbstractProvider
         return $payload;
     }
 
+    /**
+     * Send a chat message to the Ollama server
+     *
+     * @param   string  $message   The user message to send
+     * @param   array   $options  Additional options
+     * 
+     * @return  Response  The AI response
+     * @throws  ProviderException  If the request fails
+     * @since   __DEPLOY_VERSION__
+     */
     public function chat(string $message, array $options = []): Response
     {
         $payload = $this->buildChatRequestPayload($message, $options);
