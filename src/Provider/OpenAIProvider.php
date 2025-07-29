@@ -746,7 +746,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildChatRequestPayload(string $message, array $options = []): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
 
         if (isset($options['messages'])) {
             $messages = $options['messages'];
@@ -859,7 +859,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildVisionRequestPayload(string $message, string $image, array $options = [], string $capability): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
         
         if (!$this->isModelCapable($model, $capability)) {
             throw InvalidArgumentException::invalidModel($model, 'openai', self::VISION_MODELS, $capability);
@@ -916,7 +916,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageRequestPayload(string $prompt, array $options): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'dall-e-2');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'dall-e-2');
 
         if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
             throw InvalidArgumentException::invalidModel($model, 'openai', self::IMAGE_MODELS, 'image generation');
@@ -1025,7 +1025,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageVariationPayload(string $imagePath, array $options): array
     {
-        $model = $options['model'] ?? 'dall-e-2';
+        $model = $options['model'] ?? $this->defaultModel ?? 'dall-e-2';
         
         // Only dall-e-2 supports variations
         if ($model !== 'dall-e-2') {
@@ -1086,7 +1086,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildImageEditPayload($images, string $prompt, array $options): array
     {
-        $model = $options['model'] ??  $this->getOption('model', 'dall-e-2');
+        $model = $options['model'] ?? $this->defaultModel ??  $this->getOption('model', 'dall-e-2');
 
         // Only dall-e-2 and gpt-image-1 support image editing
         if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
@@ -1203,7 +1203,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      */
     private function buildSpeechPayload(string $text, array $options): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-mini-tts');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini-tts');
         $voice = $options['voice'] ?? $this->getOption('voice', 'alloy');
 
         // Validate model
@@ -1280,7 +1280,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // Validate audio file
         $this->validateAudioFile($audioFile);
 
-        $model = $options['model'] ?? $this->getOption('model', 'gpt-4o-transcribe');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-transcribe');
         
         // Validate model
         if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
@@ -1390,7 +1390,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         // Validate audio file
         $this->validateAudioFile($audioFile);
         
-        $model = $options['model'] ?? $this->getOption('model', 'whisper-1');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'whisper-1');
 
         // Validate model
         if ($model !== 'whisper-1') {

@@ -42,6 +42,14 @@ abstract class AbstractProvider implements ProviderInterface
     protected $httpFactory;
 
     /**
+     * The default model to use for API requests.
+     *
+     * @var    string|null
+     * @since  __DEPLOY_VERSION__
+     */
+    protected $defaultModel = null;
+
+    /**
      * Constructor.
      *
      * @param   array|\ArrayAccess  $options  Provider options array.
@@ -75,6 +83,40 @@ abstract class AbstractProvider implements ProviderInterface
     protected function getOption(string $key, $default = null)
     {
         return $this->options[$key] ?? $default;
+    }
+
+    /**
+     * Set the default model to use for API requests.
+     *
+     * @param   string  $model  The model name to set as default
+     * @since   __DEPLOY_VERSION__
+     */
+    public function setDefaultModel(string $model)
+    {
+        $this->defaultModel = $model;
+        return $this;
+    }
+
+    /**
+     * Unset the default model, reverting to provider-specific defaults.
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function unsetDefaultModel()
+    {
+        $this->defaultModel = null;
+        return $this;
+    }
+
+    /**
+     * Get the current default model.
+     *
+     * @return  string|null  The current default model or null if not set
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getDefaultModel()
+    {
+        return $this->defaultModel;
     }
 
     /**
