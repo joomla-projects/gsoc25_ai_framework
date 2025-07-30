@@ -174,6 +174,33 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Make HTTP DELETE request.
+     *
+     * @param   string  $url      API endpoint URL  
+     * @param   mixed   $data     Data to send with DELETE request
+     * @param   array   $headers  HTTP headers
+     * @param   integer $timeout  Request timeout
+     *
+     * @return  \Joomla\Http\Response
+     * @throws  \Exception
+     * @since  ___DEPLOY_VERSION___
+     */
+    protected function makeDeleteRequest(string $url, $data, array $headers = [], $timeout = null)
+    {
+        try {
+            $response = $this->httpFactory->getHttp([])->delete($url, $headers, $timeout, $data);
+
+            $this->validateResponse($response);
+            
+        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
+            throw $e;
+        } catch (ProviderException $e) {
+            throw $e;
+        }
+
+        return $response;
+    }
+    /**
      * Make multipart HTTP POST request.
      *
      * @param   string  $url      API endpoint URL  

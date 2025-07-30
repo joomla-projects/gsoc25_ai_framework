@@ -6,10 +6,6 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
-use Joomla\AI\Interface\ChatInterface;
-use Joomla\AI\Interface\ImageInterface;
-use Joomla\AI\Interface\ModelInterface;
-use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -107,6 +103,28 @@ class OllamaProvider extends AbstractProvider
     }
 
     /**
+     * Get the copy model endpoint URL.
+     *
+     * @return  string  The endpoint URL
+     * @since  __DEPLOY_VERSION__
+     */
+    private function getCopyModelEndpoint(): string
+    {
+        return $this->baseUrl . '/api/copy';
+    }
+
+    /**
+     * Get the delete model endpoint URL.
+     *
+     * @return  string  The endpoint URL
+     * @since  __DEPLOY_VERSION__
+     */
+    private function getDeleteModelEndpoint(): string
+    {
+        return $this->baseUrl . '/api/delete';
+    }
+
+    /**
     * Get the pull model endpoint URL.
     *
     * @return  string  The endpoint URL
@@ -145,6 +163,33 @@ class OllamaProvider extends AbstractProvider
     }
 
     /**
+     * List models currently loaded into memory (running) and echo their names.
+     *
+     * @return array Array of running model info
+     * @throws ProviderException If the request fails
+     * @since __DEPLOY_VERSION__
+     */
+    public function getRunningModels()
+    {
+        $this->validateConnection();
+
+        $endpoint = $this->baseUrl . '/api/ps';
+        $response = $this->makeGetRequest($endpoint);
+        $data = $this->parseJsonResponse($response->getBody());
+
+        $models = $data['models'] ?? [];
+
+        if (empty($models)) {
+            echo "No models are currently loaded into memory.\n";
+        } else {
+            echo "Running models:\n";
+            foreach ($models as $model) {
+                echo "- " . ($model['name'] ?? '[unknown]') . "\n";
+            }
+        }
+    }
+
+    /**
      * Check if a model exists in the available models list, handling name variations
      *
      * @param   string  $modelName        Model name to check
@@ -175,6 +220,99 @@ class OllamaProvider extends AbstractProvider
     }
 
     /**
+     * Copy a model to a new name.
+     *
+     * @param string $sourceModel      The name of the source model to copy
+     * @param string $destinationModel The new name for the copied model
+     * 
+     * @return bool                    True if copy was successful
+     * @since __DEPLOY_VERSION__
+     */
+    public function copyModel(string $sourceModel, string $destinationModel): bool
+    {
+        $this->validateConnection();
+
+        $endpoint = $this->getCopyModelEndpoint();
+        $payload = [
+            'source' => $sourceModel,
+            'destination' => $destinationModel
+        ];
+
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode copy request: ' . json_last_error_msg()]
+            );
+        }
+
+        $httpResponse = $this->makePostRequest($endpoint, $jsonData);
+        $status = $httpResponse->getStatusCode();
+
+        if ($status === 200) {
+            echo "Model '$sourceModel' copied to '$destinationModel' successfully.\n";
+            return true;
+        } elseif ($status === 404) {
+            throw InvalidArgumentException::invalidModel(
+                $sourceModel,
+                $this->getName(),
+                ['message' => "Source model '$sourceModel' does not exist."]
+            );
+        } else {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => "Unexpected status code $status from copy API."]
+            );
+        }
+    }
+
+    /**
+     * Delete a model and its data.
+     *
+     * @param string $modelName        The name of the model to delete
+     * 
+     * @return bool                    True if deletion was successful
+     * @throws ProviderException       If the deletion fails or model does not exist
+     * @since __DEPLOY_VERSION__
+     */
+    public function deleteModel(string $modelName): bool
+    {
+        $this->validateConnection();
+
+        $endpoint = $this->getDeleteModelEndpoint();
+        $payload = [
+            'model' => $modelName
+        ];
+
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode delete request: ' . json_last_error_msg()]
+            );
+        }
+
+        $httpResponse = $this->makeDeleteRequest($endpoint, $jsonData);
+        $status = $httpResponse->getStatusCode();
+
+        if ($status === 200) {
+            echo "Model '$modelName' deleted successfully.\n";
+            return true;
+        } elseif ($status === 404) {
+            throw InvalidArgumentException::invalidModel(
+                $modelName,
+                $this->getName(),
+                ['message' => "Model '$modelName' does not exist."]
+            );
+        } else {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => "Unexpected status code $status from delete API."]
+            );
+        }
+    }
+
+    /**
      * Pull a model from Ollama library
      *
      * @param   string  $modelName  Name of the model to pull
@@ -186,7 +324,7 @@ class OllamaProvider extends AbstractProvider
      * @throws  ProviderException        If pull fails for other reasons
      * @since   __DEPLOY_VERSION__
      */
-    public function pullModel(string $modelName, bool $stream = true, bool $insecure = false): bool
+    public function pullModel(string $modelName, bool $stream = true, bool $insecure = false)
     {
         $this->validateConnection();
 
@@ -316,12 +454,14 @@ class OllamaProvider extends AbstractProvider
     private function ensureModelAvailable(string $modelName): bool
     {
         $availableModels = $this->getAvailableModels();
-        
-        if (!in_array($modelName, $availableModels)) {
+
+        $availableModels = $this->getAvailableModels();
+        if (!$this->checkModelExists($modelName, $availableModels)) {
             echo "Model $modelName not found locally. Attempting to pull...\n";
-            return $this->pullModel($modelName, true, false);
+            $this->pullModel($modelName, true, false);
+        } elseif ($this->checkModelExists($modelName, $availableModels)) {
+            echo "Model $modelName is already available locally.\n";
         }
-        
         return true;
     }
 
@@ -339,33 +479,15 @@ class OllamaProvider extends AbstractProvider
     {
         $this->validateConnection();
 
-        $availableModels = $this->getAvailableModels();
-        
-        // Handle model selection and installation
-        if (isset($options['model'])) {
-            $model = $options['model'];
-            if (!$this->checkModelExists($model, $availableModels)) {
-                echo "Model '$model' not found locally. Installing...\n";
-                $this->pullModel($model);
-            } else {
-                echo "Using specified model: $model\n";
-            }
-        } else {
-            $model = $this->getOption('model', 'tinyllama');  // Default model
-            if (!$this->checkModelExists($model, $availableModels)) {
-                echo "Installing default model $model...\n";
-                $this->pullModel($model);
-            } else {
-                echo "Using default model $model since no model specified\n";
-            }
-        }
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'tinyllama');
+        $this->ensureModelAvailable($model);
+        echo "Using model: $model\n";
 
         if (isset($options['messages'])) {
             $messages = $options['messages'];
             if (!is_array($messages) || empty($messages)) {
                 throw InvalidArgumentException::invalidMessages('ollama', 'Messages must be a non-empty array.');
             }
-            $this->validateMessages($messages);
         } else {
             $messages = [
                 [
@@ -438,26 +560,9 @@ class OllamaProvider extends AbstractProvider
     {
         $this->validateConnection();
 
-        $availableModels = $this->getAvailableModels();
-        
-        // Handle model selection and installation
-        if (isset($options['model'])) {
-            $model = $options['model'];
-            if (!$this->checkModelExists($model, $availableModels)) {
-                echo "Model '$model' not found locally. Installing...\n";
-                $this->pullModel($model);
-            } else {
-                echo "Using specified model: $model\n";
-            }
-        } else {
-            $model = $this->getOption('model', 'tinyllama');  // Default model
-            if (!$this->checkModelExists($model, $availableModels)) {
-                echo "Installing default model $model...\n";
-                $this->pullModel($model);
-            } else {
-                echo "Using default model $model since no model specified\n";
-            }
-        }
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'tinyllama');
+        $this->ensureModelAvailable($model);
+        echo "Using model: $model\n";
 
         $payload = [
             'model' => $model,
@@ -563,28 +668,16 @@ class OllamaProvider extends AbstractProvider
         
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) {
-                continue;
-            }
-            
+            if ($line === '') continue;
+
             $data = json_decode($line, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                continue;
-            }
+            if (json_last_error() !== JSON_ERROR_NONE) continue;
             
             // Accumulate content from each chunk - handle both chat and generate formats
             if ($isChat && isset($data['message']['content'])) {
                 $fullContent .= $data['message']['content'];
-                // $chunk = $data['message']['content'];
-                // $fullContent .= $chunk;
-                // echo $chunk;
-                // flush();
             } elseif (!$isChat && isset($data['response'])) {
                 $fullContent .= $data['response'];
-                // $chunk = $data['response'];
-                // $fullContent .= $chunk;
-                // echo $chunk;
-                // flush();
             }
             
             // Keep track of the last metadata
