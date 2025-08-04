@@ -158,6 +158,70 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Build payload for vision request.
+     *
+     * @param   string  $message  The chat message about the image
+     * @param   string  $image    Image URL or base64 encoded image
+     * @param   array   $options  Additional options
+     * 
+     * @return  array   The request payload
+     * @throws  \InvalidArgumentException  If model does not support vision capability
+     * @since  __DEPLOY_VERSION__
+     */
+    private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
+    {
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'claude-3-haiku-20240307');
+        $maxTokens = $options['max_tokens'] ?? 1024;
+
+        // Determine image format and validate
+        $imageContent = $this->buildImageContent($image);
+        
+        $content = [
+            [
+                'type' => 'text',
+                'text' => $message
+            ],
+            $imageContent
+        ];
+
+        $messages = [
+            [
+                'role' => 'user',
+                'content' => $content
+            ]
+        ];
+
+        $payload = [
+            'model' => $model,
+            'messages' => $messages,
+            'max_tokens' => $maxTokens
+        ];
+
+        // Add optional parameters
+        if (isset($options['temperature'])) {
+            $payload['temperature'] = (float) $options['temperature'];
+        }
+
+        if (isset($options['top_k'])) {
+            $payload['top_k'] = (int) $options['top_k'];
+        }
+
+        if (isset($options['top_p'])) {
+            $payload['top_p'] = (float) $options['top_p'];
+        }
+
+        if (isset($options['stop_sequences'])) {
+            $payload['stop_sequences'] = $options['stop_sequences'];
+        }
+
+        if (isset($options['system'])) {
+            $payload['system'] = $options['system'];
+        }
+
+        return $payload;
+    }
+
+    /**
      * Send a message to Anthropic and return response.
      *
      * @param   string  $message   The message to send
@@ -169,6 +233,31 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface
     public function chat(string $message, array $options = []): Response
     {
         $payload = $this->buildChatRequestPayload($message, $options);
+        
+        $headers = $this->buildHeaders();
+        
+        $httpResponse = $this->makePostRequest(
+            $this->getMessagesEndpoint(),
+            json_encode($payload),
+            $headers
+        );
+        
+        return $this->parseAnthropicResponse($httpResponse->getBody());
+    }
+    
+    /**
+     * Generate chat completion with vision capability and return Response.
+     *
+     * @param   string  $message  The chat message about the image.
+     * @param   string  $image    Image URL or base64 encoded image.
+     * @param   array   $options  Additional options for the request.
+     * 
+     * @return  Response
+     * @since  __DEPLOY_VERSION__
+     */
+    public function vision(string $message, string $image, array $options = []): Response
+    {
+        $payload = $this->buildVisionRequestPayload($message, $image, $options);
         
         $headers = $this->buildHeaders();
         
@@ -246,6 +335,104 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface
                 return 200; // Streaming: message_start event
             default:
                 return 200;
+        }
+    }
+    
+    /**
+     * Build image content block for Anthropic API.
+     *
+     * @param   string  $image  Image URL or base64 encoded image
+     * 
+     * @return  array   Image content block
+     * @throws  \InvalidArgumentException  If image format is invalid
+     * @since  __DEPLOY_VERSION__
+     */
+    private function buildImageContent(string $image): array
+    {
+        // Check if it's a URL
+        if (filter_var($image, FILTER_VALIDATE_URL)) {
+            $imageData = $this->fetchImageFromUrl($image);
+            $mimeType = $this->detectImageMimeType($imageData);
+            
+            return [
+                'type' => 'image',
+                'source' => [
+                    'type' => 'base64',
+                    'media_type' => $mimeType,
+                    'data' => base64_encode($imageData)
+                ]
+            ];
+        }
+        
+        // Check if it's already base64 encoded
+        if (preg_match('/^data:image\/([a-zA-Z0-9+\/]+);base64,(.+)$/', $image, $matches)) {
+            $mimeType = 'image/' . $matches[1];
+            $base64Data = $matches[2];
+            
+            $this->validateImageMimeType($mimeType);
+            
+            return [
+                'type' => 'image',
+                'source' => [
+                    'type' => 'base64',
+                    'media_type' => $mimeType,
+                    'data' => $base64Data
+                ]
+            ];
+        }
+        
+        // If it is a file path
+        if (file_exists($image)) {
+            $imageData = file_get_contents($image);
+            $mimeType = $this->detectImageMimeType($imageData);
+            
+            return [
+                'type' => 'image',
+                'source' => [
+                    'type' => 'base64',
+                    'media_type' => $mimeType,
+                    'data' => base64_encode($imageData)
+                ]
+            ];
+        }
+        
+        throw InvalidArgumentException::invalidParameter('image', $image, 'anthropic', 'Image must be a valid URL, file path, or base64 encoded data.');
+    }
+
+    /**
+     * Fetch image data from URL.
+     *
+     * @param   string  $url  Image URL
+     * 
+     * @return  string  Image binary data
+     * @throws  \Exception  If image cannot be fetched
+     * @since  __DEPLOY_VERSION__
+     */
+    private function fetchImageFromUrl(string $url): string
+    {
+        $httpResponse = $this->makeGetRequest($url);
+        
+        if ($httpResponse->getStatusCode() !== 200) {
+            throw new \Exception("Failed to fetch image from URL: {$url}");
+        }
+        
+        return $httpResponse->getBody();
+    }
+
+    /**
+     * Validate image MIME type for Anthropic API.
+     *
+     * @param   string  $mimeType  MIME type to validate
+     * 
+     * @throws  \InvalidArgumentException  If MIME type is not supported
+     * @since  __DEPLOY_VERSION__
+     */
+    private function validateImageMimeType(string $mimeType): void
+    {
+        $supportedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        
+        if (!in_array($mimeType, $supportedTypes)) {
+            throw InvalidArgumentException::invalidParameter('image_type', $mimeType, 'anthropic', 'Supported image types: ' . implode(', ', $supportedTypes), ['supported_types' => $supportedTypes]);
         }
     }
 }
