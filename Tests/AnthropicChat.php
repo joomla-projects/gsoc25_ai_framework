@@ -23,7 +23,7 @@ try {
     echo "Test 1: Simple prompt\n";
     echo str_repeat('-', 50) . "\n";
 
-    $response = $provider->chat("Hello! How are you?");
+    $response = $provider->chat("Translate the following sentence into French: Joomla makes website building easy and fun.", ['model' => 'claude-3-haiku-20240307']);
 
     echo "API call successful!\n";
     echo "Response: " . $response->getContent() . "\n";

@@ -10,9 +10,11 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
@@ -22,7 +24,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class AnthropicProvider extends AbstractProvider implements ProviderInterface
+class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface
 {
     /**
      * Custom base URL for API requests
@@ -126,7 +128,62 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface
     {
         return $this->baseUrl . '/messages';
     }
-    
+
+    /**
+     * Get the models endpoint URL.
+     *
+     * @return  string  The endpoint URL
+     * @since  __DEPLOY_VERSION__
+     */
+    private function getModelsEndpoint(): string
+    {
+        return $this->baseUrl . '/models';
+    }
+
+    /**
+     * List available models from Anthropic.
+     *
+     * @param   array  $options  Optional parameters for the request
+     * 
+     * @return  Response  The response containing model list
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getAvailableModels(): array
+    {
+        $headers = $this->buildHeaders();
+        $response = $this->makeGetRequest($this->getModelsEndpoint(), $headers);
+        $data = $this->parseJsonResponse($response->getBody());
+
+        return array_column($data['data'], 'id');
+    }
+
+    /**
+     * Get information about a specific model.
+     *
+     * @param   string  $modelId  The model identifier or alias
+     * 
+     * @return  Response  The response containing model information
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getModel(string $modelId): Response
+    {
+        $endpoint = $this->getModelsEndpoint() . '/' . urlencode($modelId);
+        $headers = $this->buildHeaders();
+        $httpResponse = $this->makeGetRequest($endpoint, $headers);    
+        $data = $this->parseJsonResponse($httpResponse->getBody());
+
+        if (isset($data['error'])) {
+            throw new ProviderException($this->getName(), $data);
+        }
+
+        return new Response(
+            json_encode($data, JSON_PRETTY_PRINT),
+            $this->getName(),
+            ['raw_response' => $data],
+            200
+        );
+    }
+
     /**
      * Build payload for chat request.
      *
