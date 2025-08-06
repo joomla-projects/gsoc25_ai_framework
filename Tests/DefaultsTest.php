@@ -25,7 +25,7 @@ try {
 
     $response1 = $provider->chat("Hi, Can you write a paragraph on the importance of AI in modern technology?");
     echo $response1->getContent();
-    $response1->saveContentToFile('output/chat.txt');
+    $response1->saveFile('output/chat.txt');
 
     echo "\n" . str_repeat("=", 50) . "\n";
     
@@ -38,7 +38,7 @@ try {
     echo str_repeat("-", 40) . "\n";
 
     $response2 = $provider->generateImage("Please generate an image for my blog post about my mount fuji hiking trip");
-    $response2->saveContentToFile('output/mount_fuji.png');
+    $response2->saveFile('output/mount_fuji.png');
 
     echo "\n" . str_repeat("=", 50) . "\n";
 
@@ -54,7 +54,7 @@ try {
             'n' => 3,
         ]
     );
-    $response3->saveContentToFile('output/thin_pizza.txt');
+    $response3->saveFile('output/thin_pizza.txt');
 
     echo "\n" . str_repeat("=", 50) . "\n\n";
 
@@ -69,7 +69,7 @@ try {
     $text = "Hello world! This is a test of the OpenAI text-to-speech capability.";
 
     $response4 = $provider->speech($text);
-    $response4->saveContentToFile('output/speech_4.mp3');
+    $response4->saveFile('output/speech_4.mp3');
 
     echo str_repeat("=", 50) . "\n\n";
 
@@ -85,7 +85,7 @@ try {
 
     $response5 = $provider->transcribe($audioFile);
     $response5->getContent();
-    $response5->saveContentToFile('output/transcribed.txt');
+    $response5->saveFile('output/transcribed.txt');
     
     echo str_repeat("=", 50) . "\n\n";
     
@@ -101,7 +101,7 @@ try {
     
     $response6 = $provider->translate($testAudioFile);
     echo $response6->getContent();
-    $response6->saveContentToFile('output/translated.txt');
+    $response6->saveFile('output/translated.txt');
 
     echo "\n" . str_repeat("=", 50) . "\n\n";
 

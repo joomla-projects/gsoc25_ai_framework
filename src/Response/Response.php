@@ -89,7 +89,7 @@ class Response
      * @throws \RuntimeException
      * @since  __DEPLOY_VERSION__
      */
-    public function saveContentToFile(string $filename)
+    public function saveFile(string $filename)
     {
         // Create directory if it doesn't exist
         $dir = dirname($filename);

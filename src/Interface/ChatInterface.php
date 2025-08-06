@@ -39,5 +39,5 @@ interface ChatInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function chatWithVision(string $message, string $image, array $options = []): Response;
+    public function vision(string $message, string $image, array $options = []): Response;
 }

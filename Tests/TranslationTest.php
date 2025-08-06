@@ -22,7 +22,7 @@ try {
     $testText = "Hallo, hiermit testen wir die Übersetzungsfunktion von OpenAI. Audio wird ins Englische übersetzt. Wir geben die Dateien und das zu verwendende Modell ein; aktuell ist nur Whisper-1 verfügbar. Ein optionaler Text dient zur Orientierung des Modells oder zur Fortsetzung eines vorherigen Audiosegments. Die Eingabeaufforderung sollte auf Englisch sein. Das Ausgabeformat kann in einer der folgenden Optionen gewählt werden: JSON, Text, SRT, Verbose_JSON oder VTT. Wir hoffen, dies funktioniert.";
 
     $speechResponse = $provider->speech($testText, ['model' => 'tts-1', 'voice' => 'alloy', 'response_format' => 'wav']);
-    $speechResponse->saveContentToFile('test_files/test_german_audio.wav');
+    $speechResponse->saveFile('test_files/test_german_audio.wav');
     echo "Audio file created: test_files/test_german_audio.wav\n\n";
 
     echo str_repeat("=", 60) . "\n\n";
