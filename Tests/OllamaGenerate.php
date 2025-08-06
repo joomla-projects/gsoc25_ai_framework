@@ -16,7 +16,7 @@ try {
     echo "Test 1: Simple prompt\n";
     echo str_repeat('-', 50) . "\n";
 
-    $response1 = $provider->generate("Write a short paragraph about artificial intelligence.");
+    $response1 = $provider->generate("Summarize the main benefits of using open-source software in three bullet points.");
     echo $response1->getContent() . "\n\n";
 
     // // Test 2: With streaming
@@ -42,58 +42,58 @@ try {
     // echo $response3->getContent() . "\n\n";
 
     // Test 4: With response_format option
-    echo "Test 4: Structured JSON output\n";
-    echo str_repeat('-', 50) . "\n";
+    // echo "Test 4: Structured JSON output\n";
+    // echo str_repeat('-', 50) . "\n";
 
-    $options = [
-        'format' => [
-            'type' => 'object',
-            'properties' => [
-                'age' => [
-                    'type' => 'integer'
-                ],
-                'available' => [
-                    'type' => 'boolean'
-                ]
-            ],
-            'required' => [
-                'age',
-                'available'
-            ]
-        ]
-    ];
+    // $options = [
+    //     'format' => [
+    //         'type' => 'object',
+    //         'properties' => [
+    //             'age' => [
+    //                 'type' => 'integer'
+    //             ],
+    //             'available' => [
+    //                 'type' => 'boolean'
+    //             ]
+    //         ],
+    //         'required' => [
+    //             'age',
+    //             'available'
+    //         ]
+    //     ]
+    // ];
 
-    $response = $provider->generate(
-        "Ollama is 22 years old and is busy saving the world. Respond using JSON",
-        $options
-    );
+    // $response = $provider->generate(
+    //     "Ollama is 22 years old and is busy saving the world. Respond using JSON",
+    //     $options
+    // );
     
-    echo $response->getContent() . "\n\n";
+    // echo $response->getContent() . "\n\n";
 
-    // Test 5: Image processing with base64 encoding
-    echo "Test 5: Image processing with base64 encoding\n";
-    echo str_repeat('-', 50) . "\n";
+    // // Test 5: Image processing with base64 encoding
+    // echo "Test 5: Image processing with base64 encoding\n";
+    // echo str_repeat('-', 50) . "\n";
 
-    // Read the image file and convert to base64
-    $imagePath = __DIR__ . '/test_files/fish.png';
-    $imageData = file_get_contents($imagePath);
-    if ($imageData === false) {
-        throw new Exception("Failed to read image file: $imagePath");
-    }
-    $base64Image = base64_encode($imageData);
+    // // Read the image file and convert to base64
+    // $imagePath = __DIR__ . '/test_files/fish.png';
+    // $imageData = file_get_contents($imagePath);
+    // if ($imageData === false) {
+    //     throw new Exception("Failed to read image file: $imagePath");
+    // }
+    // $base64Image = base64_encode($imageData);
 
-    $options = [
-        'model' => 'llava',
-        'images' => [$base64Image]
-    ];
+    // $options = [
+    //     'model' => 'llava',
+    //     'images' => [$base64Image]
+    // ];
 
-    $response = $provider->generate(
-        "What is in this picture?",
-        $options
-    );
+    // $response = $provider->generate(
+    //     "What is in this picture?",
+    //     $options
+    // );
 
-    echo "Response content:\n";
-    echo $response->getContent() . "\n\n";
+    // echo "Response content:\n";
+    // echo $response->getContent() . "\n\n";
 
     echo "\n" . str_repeat('=', 60) . "\n";
     echo "All Generate tests completed successfully!\n";

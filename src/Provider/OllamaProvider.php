@@ -468,14 +468,14 @@ class OllamaProvider extends AbstractProvider
     /**
      * Build the request payload for the chat endpoint
      *
-     * @param   string  $message   The user message to send
+     * @param   string|array  $message   The user message to send
      * @param   array   $options  Additional options
      * 
      * @return  array   The request payload
      * @throws  \InvalidArgumentException  If model does not support chat capability
      * @since  __DEPLOY_VERSION__
      */
-    public function buildChatRequestPayload(string $message, array $options = [])
+    public function buildChatRequestPayload(mixed $message, array $options = [])
     {
         $this->validateConnection();
 
@@ -489,7 +489,7 @@ class OllamaProvider extends AbstractProvider
                 throw InvalidArgumentException::invalidMessages('ollama', 'Messages must be a non-empty array.');
             }
         } else {
-            $messages = [
+            $messages = $options['messages'] ?? [
                 [
                     'role' => 'user',
                     'content' => $message
