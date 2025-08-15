@@ -20,10 +20,10 @@ interface ChatInterface
 {
     /**
      * Generate a chat response from the AI provider.
-     * 
+     *
      * @param   string  $message     The message to send to the AI provider.
      * @param   array   $options    An associative array of options to send with the request.
-     * 
+     *
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */

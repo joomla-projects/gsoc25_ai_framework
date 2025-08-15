@@ -30,15 +30,15 @@ class InvalidArgumentException extends AIException
     public static function invalidModel(string $model, string $provider, array $validModels = [], string $capability = ''): self
     {
         $message = "Model '{$model}' is not supported by {$provider}";
-        
+
         if ($capability) {
             $message = "Model '{$model}' does not support {$capability} capability on {$provider}";
         }
-        
+
         if (!empty($validModels)) {
             $message .= ". Valid models: " . implode(', ', $validModels);
         }
-        
+
         return new self(
             $message,
             $provider,
@@ -68,7 +68,7 @@ class InvalidArgumentException extends AIException
     public static function invalidTemperature(float $temperature, string $provider, float $min = 0.0, float $max = 2.0): self
     {
         $message = "Temperature value {$temperature} is invalid. Must be between {$min} and {$max}";
-        
+
         return new self(
             $message,
             $provider,
@@ -99,9 +99,9 @@ class InvalidArgumentException extends AIException
     {
         $fileSizeMB = round($fileSize / 1024 / 1024, 2);
         $maxSizeMB = round($maxSize / 1024 / 1024, 2);
-        
+
         $message = "File '{$filePath}' size ({$fileSizeMB}MB) exceeds maximum allowed size ({$maxSizeMB}MB)";
-        
+
         if ($model) {
             $message .= " for model '{$model}'";
         }
@@ -136,13 +136,13 @@ class InvalidArgumentException extends AIException
     public static function invalidFileFormat(string $filePath, string $currentFormat, array $allowedFormats, string $provider, string $operation = ''): self
     {
         $message = "File '{$filePath}' has unsupported format '{$currentFormat}'";
-        
+
         if ($operation) {
             $message .= " for {$operation}";
         }
-        
+
         $message .= " on {$provider}. Supported formats: " . implode(', ', $allowedFormats);
-        
+
         return new self(
             $message,
             $provider,
@@ -172,7 +172,7 @@ class InvalidArgumentException extends AIException
     public static function invalidVoice(string $voice, array $availableVoices, string $provider): self
     {
         $message = "Voice '{$voice}' is not available on {$provider}. Available voices: " . implode(', ', $availableVoices);
-        
+
         return new self(
             $message,
             $provider,
@@ -225,7 +225,7 @@ class InvalidArgumentException extends AIException
     public static function invalidImageSize(string $size, array $allowedSizes, string $provider, string $model): self
     {
         $message = "Image size '{$size}' is not supported";
-        
+
         if ($model) {
             $message .= " for model '{$model}'.";
         }
@@ -263,14 +263,14 @@ class InvalidArgumentException extends AIException
     {
         $valueStr = is_scalar($value) ? (string)$value : gettype($value);
         $message = "Parameter '{$parameter}' has invalid value '{$valueStr}'. {$requirement}";
-        
+
         $contextData = array_merge([
             'parameter' => $parameter,
             'invalid_value' => $value,
             'requirement' => $requirement,
             'validation_type' => 'parameter'
         ], $context);
-        
+
         return new self($message, $provider, $contextData, null, null, null);
     }
 
@@ -287,11 +287,11 @@ class InvalidArgumentException extends AIException
     public static function missingParameter(string $parameter, string $provider, string $method = ''): self
     {
         $message = "Required parameter '{$parameter}' is missing";
-        
+
         if ($method) {
             $message .= " for {$method}()";
         }
-                
+
         return new self(
             $message,
             $provider,
