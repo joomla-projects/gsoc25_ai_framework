@@ -8,33 +8,26 @@
  */
 
 namespace Joomla\AI\Response;
-    
+
 use Joomla\Filesystem\File;
 use Joomla\Filesystem\Folder;
 use Joomla\Filesystem\Path;
+use Joomla\Http\Response as HttpResponse;
 
 /**
  * AI response data object class.
  *
  * @since  __DEPLOY_VERSION__
  */
-class Response
- {
+class Response extends HttpResponse
+{
     /**
-     * The content of the response.
+     * The provider of the response.
      *
      * @var string
      * @since  __DEPLOY_VERSION__
      */
-    private $content;
-
-    /**
-     * The status code of the response.
-     *
-     * @var int
-     * @since  __DEPLOY_VERSION__
-     */
-    private $statusCode;
+    private string $provider;
 
     /**
      * The metadata of the response.
@@ -42,15 +35,7 @@ class Response
      * @var array
      * @since  __DEPLOY_VERSION__
      */
-    private $metadata;
-
-    /**
-     * The provider of the response.
-     *
-     * @var string
-     * @since  __DEPLOY_VERSION__
-     */
-    private $provider;
+    private array $metadata;
 
     /**
      * Constructor.
@@ -64,21 +49,25 @@ class Response
      */
     public function __construct(string $content, string $provider, array $metadata = [], int $status = 200)
     {
-        $this->content = $content;
+        parent::__construct('php://memory', $status);
+
+        $body = $this->getBody();
+        $body->write($content);
+        $body->rewind();
+
         $this->provider = $provider;
         $this->metadata = $metadata;
-        $this->statusCode = $status;
     }
 
     /**
      * Get the content of the response.
      *
-     * @return  string  The content of the response.
+     * @return string
      * @since  __DEPLOY_VERSION__
      */
     public function getContent(): string
     {
-        return $this->content;
+        return (string) $this->getBody();
     }
 
     /**
@@ -190,56 +179,5 @@ class Response
     public function getProvider(): string
     {
         return $this->provider;
-    }
-
-    /**
-     * Get the status code of the response.
-     *
-     * @return  int  The status code of the response.
-     * @since  __DEPLOY_VERSION__
-     */
-    public function getStatusCode(): int
-    {
-        return $this->statusCode;
-    }
-
-    /**
-     * Magic method to access properties of the response object.
-     *
-     * @param   string  $name  The name of the property to get.
-     *
-     * @return  mixed  The value of the property.
-     * @since  __DEPLOY_VERSION__
-     */
-    public function __get($name)
-    {
-        switch (strtolower($name)) {
-            case 'content':
-                return $this->getContent();
-
-            case 'metadata':
-                return $this->getMetadata();
-
-            case 'provider':
-                return $this->getProvider();
-
-            case 'statuscode':
-                return $this->getStatusCode();
-
-            default:
-                $trace = debug_backtrace();
-
-                trigger_error(
-                    sprintf(
-                        'Undefined property via __get(): %s in %s on line %s',
-                        $name,
-                        $trace[0]['file'],
-                        $trace[0]['line']
-                    ),
-                    E_USER_NOTICE
-                );
-
-                break;
-        }
     }
 }
