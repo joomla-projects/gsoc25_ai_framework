@@ -8,7 +8,7 @@
  */
 
 namespace Joomla\AI\Response;
-    
+
 use Joomla\Filesystem\File;
 use Joomla\Filesystem\Folder;
 use Joomla\Filesystem\Path;
@@ -19,7 +19,7 @@ use Joomla\Filesystem\Path;
  * @since  __DEPLOY_VERSION__
  */
 class Response
- {
+{
     /**
      * The content of the response.
      *

@@ -60,7 +60,8 @@ class AIException extends \Exception
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct(string $message, string $provider, array $context, ?\Throwable $previous, ?int $httpStatusCode, ?string $providerErrorCode) {
+    public function __construct(string $message, string $provider, array $context, ?\Throwable $previous, ?int $httpStatusCode, ?string $providerErrorCode)
+    {
         parent::__construct($message, 0, $previous);
         $this->provider = $provider;
         $this->context = $context;
@@ -134,7 +135,8 @@ class AIException extends \Exception
      *
      * @return  string  Detailed error message
      */
-    protected function buildDetailedMessage(string $provider, string $errorType, string $message, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null): string {
+    protected function buildDetailedMessage(string $provider, string $errorType, string $message, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null): string
+    {
         $details = [];
         $details[] = "Provider: {$provider}";
         $details[] = "HTTP Status: " . ($httpStatusCode ?? 'Unknown');

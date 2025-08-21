@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Part of the Joomla Framework AI Package
  *
@@ -25,12 +26,11 @@ class ProviderException extends AIException
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function __construct(string $provider, string|array $errorData, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null) 
+    public function __construct(string $provider, string|array $errorData, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null)
     {
         $context = ['error_data' => $errorData];
         $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;
         $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? 'Unknown Error';
-
         if (is_array($errorData)) {
             $message = $errorData['message'] ?? $errorData['error']['message'] ?? $errorData['error'] ?? 'Unknown provider error';
         } else {
@@ -38,7 +38,6 @@ class ProviderException extends AIException
         }
 
         $detailedMessage = $this->buildDetailedMessage($provider, $errorType, $message, $httpStatusCode, $providerErrorCode);
-        
         parent::__construct($detailedMessage, $provider, $context, null, $httpStatusCode, $providerErrorCode);
     }
 

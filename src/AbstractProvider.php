@@ -46,7 +46,7 @@ abstract class AbstractProvider implements ProviderInterface
      *
      * @param   array|\ArrayAccess  $options  Provider options array.
      * @param   HttpFactory   $httpFactory  The http factory
-     * 
+     *
      * @throws  \InvalidArgumentException
      * @since  ___DEPLOY_VERSION___
      */
@@ -65,10 +65,10 @@ abstract class AbstractProvider implements ProviderInterface
 
     /**
      * Get an option from the AI provider.
-     * 
+     *
      * @param   string  $key      The name of the option to get.
      * @param   mixed   $default  The default value if the option is not set.
-     * 
+     *
      * @return  mixed The option value.
      * @since  ___DEPLOY_VERSION___
      */
@@ -92,9 +92,9 @@ abstract class AbstractProvider implements ProviderInterface
     {
         try {
             $response = $this->httpFactory->getHttp([])->get($url, $headers, $timeout);
-            
+
             $this->validateResponse($response);
-        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
+        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
             throw $e;
         } catch (ProviderException $e) {
             throw $e;
@@ -106,7 +106,7 @@ abstract class AbstractProvider implements ProviderInterface
     /**
      * Make HTTP POST request.
      *
-     * @param   string   $url      API endpoint URL  
+     * @param   string   $url      API endpoint URL
      * @param   mixed    $data     POST data
      * @param   array    $headers  HTTP headers
      * @param   integer  $timeout  Request timeout
@@ -119,10 +119,9 @@ abstract class AbstractProvider implements ProviderInterface
     {
         try {
             $response = $this->httpFactory->getHttp([])->post($url, $data, $headers, $timeout);
-            
+
             $this->validateResponse($response);
-            
-        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
+        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
             throw $e;
         } catch (ProviderException $e) {
             throw $e;
@@ -134,7 +133,7 @@ abstract class AbstractProvider implements ProviderInterface
     /**
      * Make multipart HTTP POST request.
      *
-     * @param   string  $url      API endpoint URL  
+     * @param   string  $url      API endpoint URL
      * @param   array   $data     Form data
      * @param   array   $headers  HTTP headers
      *
@@ -157,12 +156,12 @@ abstract class AbstractProvider implements ProviderInterface
                 $filepath = $data['_filepath'];
                 $filename = $data['_filename'];
                 $mimeType = $this->detectAudioMimeType($filepath);
-                
+
                 $fileResource = fopen($filepath, 'rb');
                 if (!$fileResource) {
                     throw new \Exception("Cannot open file: $filepath");
                 }
-                
+
                 $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"file\"; filename=\"{$filename}\"\r\n";
                 $postData .= "Content-Type: {$mimeType}\r\n\r\n";
@@ -171,9 +170,8 @@ abstract class AbstractProvider implements ProviderInterface
                 fclose($fileResource);
 
                 $postData .= $fileContent . "\r\n";
-            }
-            // To do: Currently strict format
-            elseif ($key === 'image') {
+            } elseif ($key === 'image') {
+                // To do: Currently strict format
                 if (is_array($value)) {
                     foreach ($value as $index => $imageData) {
                         $postData .= "--{$boundary}\r\n";
@@ -188,16 +186,14 @@ abstract class AbstractProvider implements ProviderInterface
                     $postData .= "Content-Type: image/png\r\n\r\n";
                     $postData .= $value . "\r\n";
                 }
-            }
-            // Handle mask file
-            elseif ($key === 'mask') {
+            } elseif ($key === 'mask') {
+                // Handle mask file
                 $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"mask\"; filename=\"mask.png\"\r\n";
                 $postData .= "Content-Type: image/png\r\n\r\n";
                 $postData .= $value . "\r\n";
-            }
-            // Handle regular form fields
-            else {
+            } else {
+                // Handle regular form fields
                 $postData .= "--{$boundary}\r\n";
                 $postData .= "Content-Disposition: form-data; name=\"{$key}\"\r\n\r\n";
                 $postData .= $value . "\r\n";
@@ -230,7 +226,6 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         return "image.{$extension}";
-
     }
 
     /**
@@ -244,22 +239,22 @@ abstract class AbstractProvider implements ProviderInterface
     protected function detectImageMimeType(string $imageData): string
     {
         $header = substr($imageData, 0, 16);
-        
+
         // PNG signature
         if (substr($header, 0, 8) === "\x89PNG\r\n\x1a\n") {
             return 'image/png';
         }
-        
+
         // JPEG signature
         if (substr($header, 0, 2) === "\xFF\xD8") {
             return 'image/jpeg';
         }
-        
+
         // WebP signature
         if (substr($header, 0, 4) === 'RIFF' && substr($header, 8, 4) === 'WEBP') {
             return 'image/webp';
         }
-        
+
         throw new \InvalidArgumentException('Unsupported image format. Only PNG, JPEG, and WebP are supported.');
     }
 
@@ -275,7 +270,7 @@ abstract class AbstractProvider implements ProviderInterface
                 return 'png';
         }
     }
-  
+
     /**
      * Get audio MIME type from file path.
      *
@@ -289,7 +284,7 @@ abstract class AbstractProvider implements ProviderInterface
         if (strpos($input, '.') !== false && !in_array($input, ['mp3', 'wav', 'flac', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'webm', 'opus', 'aac', 'pcm'])) {
             $input = strtolower(pathinfo($input, PATHINFO_EXTENSION));
         }
-        
+
         $mimeMap = [
             'mp3' => 'audio/mpeg',
             'wav' => 'audio/wav',
@@ -304,7 +299,7 @@ abstract class AbstractProvider implements ProviderInterface
             'aac' => 'audio/aac',
             'pcm' => 'audio/pcm',
         ];
-        
+
         return $mimeMap[$input];
     }
 
@@ -351,7 +346,7 @@ abstract class AbstractProvider implements ProviderInterface
         if (!isset($capabilityMap[$capability])) {
             return false;
         }
-        
+
         return $this->isModelAvailable($model, $capabilityMap[$capability]);
     }
 
@@ -377,19 +372,20 @@ abstract class AbstractProvider implements ProviderInterface
                 case 401:
                 case 403:
                     throw new AuthenticationException($this->getName(), $errorData, $response->getStatusCode());
-                    
+
                 case 429:
-                    if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') ||str_contains(strtolower($message), 'billing')) {
+                    if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') || str_contains(strtolower($message), 'billing')) {
                         throw new QuotaExceededException($this->getName(), $errorData, $response->getStatusCode());
                     } elseif (str_contains(strtolower($message), 'rate') || str_contains(strtolower($message), 'limit') || str_contains(strtolower($message), 'too many requests')) {
                         throw new RateLimitException($this->getName(), $errorData, $response->getStatusCode());
                     }
-                    
+                    break;
+
                 default:
                     throw new ProviderException($this->getName(), $errorData, $response->getStatusCode(), $providerErrorCode);
             }
         }
-    
+
         return true;
     }
 
@@ -402,9 +398,9 @@ abstract class AbstractProvider implements ProviderInterface
 
     /**
      * Parse JSON response safely
-     * 
+     *
      * @param   string  $jsonString  The JSON string to parse
-     * 
+     *
      * @return  array  The parsed JSON data
      * @throws  UnserializableResponseException  If JSON parsing fails
      * @since  ___DEPLOY_VERSION___
@@ -412,11 +408,11 @@ abstract class AbstractProvider implements ProviderInterface
     protected function parseJsonResponse(string $jsonString): array
     {
         $decoded = json_decode($jsonString, true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new UnserializableResponseException($this->getName(), $jsonString, json_last_error_msg(), 422);
         }
-        
+
         return $decoded;
     }
 
