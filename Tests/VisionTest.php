@@ -23,7 +23,7 @@ try {
     echo "Test 1: Vision with image URL...\n";
     $imageUrl = "https://upload.wikimedia.org/wikipedia/commons/e/eb/Ash_Tree_-_geograph.org.uk_-_590710.jpg";
     
-    $response = $provider->chatWithVision("What do you see in this image?", $imageUrl);
+    $response = $provider->vision("What do you see in this image?", $imageUrl);
 
     echo "Vision API call successful!\n";
     echo "Response: " . $response->getContent() . "\n";
@@ -42,7 +42,7 @@ try {
     
     // Test 2: Vision with specific model
     echo "Test 2: Vision with specific model (gpt-4o)...\n";
-    $response = $provider->chatWithVision(
+    $response = $provider->vision(
         "Describe the colors and mood of this image.", 
         $imageUrl,
         ['model' => 'gpt-4o', 'max_tokens' => 100]

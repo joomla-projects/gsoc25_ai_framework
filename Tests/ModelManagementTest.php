@@ -88,7 +88,7 @@ try {
     // Test with valid vision model
     try {
         echo "Testing vision with valid model (gpt-4o-mini)...\n";
-        $response = $provider->chatWithVision("What do you see?", $imageUrl);
+        $response = $provider->vision("What do you see?", $imageUrl);
         echo "Vision with gpt-4o-mini successful\n";
         echo "Response: " . $response->getContent() . "\n\n";
     } catch (Exception $e) {
@@ -98,7 +98,7 @@ try {
     // Test with invalid model for vision
     try {
         echo "Testing vision with invalid model (gpt-3.5-turbo)...\n";
-        $response = $provider->chatWithVision("What do you see?", $imageUrl, ['model' => 'gpt-3.5-turbo']);
+        $response = $provider->vision("What do you see?", $imageUrl, ['model' => 'gpt-3.5-turbo']);
         echo "This should not succeed!\n\n";
     } catch (Exception $e) {
         echo "Correctly caught error: " . $e->getMessage() . "\n\n";

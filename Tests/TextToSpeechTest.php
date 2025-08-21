@@ -37,7 +37,7 @@ try {
     echo "Audio Size: " . $metadata['size_bytes'] . " bytes\n";
     
     // Save audio to file
-    $response->saveContentToFile('output/speech_test_1.mp3');
+    $response->saveFile('output/speech_test_1.mp3');
     echo "Audio saved as 'output/speech_test_1.mp3'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";
@@ -65,7 +65,7 @@ try {
     echo "Audio Size: " . $metadata2['size_bytes'] . " bytes\n";
     
     // Save WAV file
-    $response2->saveContentToFile('output/speech_test_2.wav');
+    $response2->saveFile('output/speech_test_2.wav');
     echo "Audio saved as 'output/speech_test_2.wav'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";
@@ -95,7 +95,7 @@ try {
     echo "Instructions Used: " . ($metadata3['instructions'] ?? 'None') . "\n";
     
     // Save audio file
-    $response3->saveContentToFile('output/speech_test_3.mp3');
+    $response3->saveFile('output/speech_test_3.mp3');
     echo "Audio saved as 'output/speech_test_3.mp3'\n\n";
 
     echo str_repeat("=", 50) . "\n\n";

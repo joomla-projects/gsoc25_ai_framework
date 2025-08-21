@@ -131,7 +131,7 @@ try {
         echo "Testing vision message: \"$flaggedVisionMessage\"\n";
         echo "With image URL: $sampleImageUrl\n";
         
-        $response = $provider->chatWithVision($flaggedVisionMessage, $sampleImageUrl);
+        $response = $provider->vision($flaggedVisionMessage, $sampleImageUrl);
         
         echo "Response: " . $response->getContent() . "\n";
         echo "Status: (FAILED) Flagged vision content was NOT blocked\n";

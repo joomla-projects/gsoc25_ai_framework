@@ -21,7 +21,7 @@ try {
     $testText = "Hello world! This is a test of the OpenAI transcription functionality. We are testing speech to text conversion with the Whisper model.";
 
     $speechResponse = $provider->speech($testText, ['model' => 'tts-1', 'voice' => 'alloy', 'response_format' => 'wav']);
-    $speechResponse->saveContentToFile('test_files/test_audio.wav');
+    $speechResponse->saveFile('test_files/test_audio.wav');
     echo "Audio file created: test_files/test_audio.wav\n\n";
     
     echo str_repeat("=", 60) . "\n\n";

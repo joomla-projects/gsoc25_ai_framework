@@ -455,7 +455,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */
-    public function chatWithVision(string $message, string $image, array $options = []): Response
+    public function vision(string $message, string $image, array $options = []): Response
     {
         // Apply moderation to the input (text + image)
         $multiModalInput = [
@@ -509,8 +509,8 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             json_encode($payload), 
             $headers
         );
-                
-        return $this->parseImageResponse($httpResponse->getBody());
+
+        return $this->parseImageResponse($httpResponse->getBody(), $payload);
     }
 
     /**
@@ -534,7 +534,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseImageResponse($httpResponse->getBody());
+        return $this->parseImageResponse($httpResponse->getBody(), $payload);
     }
 
     /**
@@ -566,7 +566,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
             $headers
         );
                 
-        return $this->parseImageResponse($httpResponse->getBody());
+        return $this->parseImageResponse($httpResponse->getBody(), $payload);
     }
 
     /**
@@ -1583,7 +1583,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @throws  \Exception  If response parsing fails
      * @since  __DEPLOY_VERSION__
      */
-    private function parseImageResponse(string $responseBody): Response
+    private function parseImageResponse(string $responseBody, array $payload): Response
     {
         // To Do: Clean Image API response for generation and editing
         $data = $this->parseJsonResponse($responseBody);
@@ -1633,6 +1633,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         }
 
         $metadata = [
+            'model' => $data['model'] ?? $payload['model'],
             'created' => $data['created'] ?? time(),
             'response_format' => $responseFormat,
             'image_count' => count($images),
@@ -1829,7 +1830,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
         $content = json_encode($contentData);
 
         $metadata = [
-            'model' => $data['model'],
+            'model' => $data['model'] ?? $payload['model'],
             'object' => $data['object'],
             'embedding_count' => count($embeddings),
             'encoding_format' => $payload['encoding_format'],

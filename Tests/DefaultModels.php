@@ -20,7 +20,7 @@ try {
     echo "Provider name: " . $provider->getName() . "\n\n";
 
     // To Do: Check if the provider is supported. Currently key set as env variables only
-    // if (!OpenAIProvider::isSupported()) {
+    // // if (!OpenAIProvider::isSupported()) {
     //     throw new \Exception('OpenAI API is not supported or API key is missing.');
     // }
 
@@ -28,7 +28,9 @@ try {
     $provider->setDefaultModel('gpt-3.5-turbo');
     echo "Default model: " . $provider->getDefaultModel() . "\n\n";
 
-    // Test 1: Simple prompt- Will use default model
+    // Test 1: Will use default model since ('gpt-3.5-turbo')
+    // no model is specified in the options 
+    // and the default model is set
     echo "Test 1: Simple prompt- Will use default model gpt-3.5-turbo\n";
     echo str_repeat('-', 50) . "\n";
 
@@ -37,7 +39,9 @@ try {
     echo "Response: " . $response->getContent() . "\n";
     echo "\n";
 
-    // Test 2: Multiple Response Choices  Will use default model
+    // Test 2: Will use default model for the next call again since ('gpt-3.5-turbo')
+    // no model is specified in the options 
+    // and the default model is set
     echo "Test 2: Multiple Response Choices- Will use default model gpt-3.5-turbo\n";
     echo str_repeat('-', 50) . "\n";
 
@@ -46,7 +50,8 @@ try {
     echo "Response: " . $response->getContent() . "\n";
     echo "\n";
 
-    // Test 3: This will override the default and use gpt-4o-audio-preview model
+    // Test 3: This will override the default model since 
+    // model is specified in the options ('gpt-4o-audio-preview')
     echo "Test 3: Test chat completions audio capability- Will override the default and use gpt-4o-audio-preview model\n";
     echo str_repeat('-', 50) . "\n";
     $response = $provider->chat("Say a few words on Joomla! for about 30 seconds in english.", [
@@ -60,16 +65,6 @@ try {
 
     $metadata = $response->getMetadata();
     echo "Model: " . $response->getMetadata()['model'] . "\n";
-    $debugFile = "output/full_audio_response_structure.json";
-    $fullStructure = [
-        'response_class' => get_class($response),
-        'content' => $response->getContent(),
-        'status_code' => $response->getStatusCode(),
-        'provider' => $response->getProvider(),
-        'metadata' => $metadata
-    ];
-    file_put_contents($debugFile, json_encode($fullStructure, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-    echo "Full response structure saved to: $debugFile\n";
 
     if (isset($metadata['choices'][0]['message']['audio']['data'])) {
         $audioData = $metadata['choices'][0]['message']['audio']['data'];
@@ -81,7 +76,9 @@ try {
     }
     echo "\n";
 
-    // Test 4: Simple prompt- Will use default model
+    // Test 4: Will use default model for the next call again since ('gpt-3.5-turbo')
+    // no model is specified in the options 
+    // and the default model was never unset
     echo "Test 4: Simple prompt- Will use default model gpt-3.5-turbo because default model was not unset\n";
     echo str_repeat('-', 50) . "\n";
 
@@ -94,13 +91,37 @@ try {
     $provider->unsetDefaultModel();
     echo "Default model unset\n\n";
 
-    // Test 5: This will use the provider's default (gpt-4o-mini)
-    echo "Test 5: Simple prompt- Will use use the provider's default (gpt-4o-mini) because default model was unset\n";
+    // Test 5: Uses method's default 
+    // (no model in options, 
+    // no default model, 
+    // no config model)
+    echo "Test 5: generateImage with method's default model (should use 'dall-e-2')\n";
     echo str_repeat('-', 50) . "\n";
 
-    $response = $provider->chat("What is the color of the sky?");
-    echo "Model: " . $response->getMetadata()['model'] . "\n";
-    echo "Response: " . $response->getContent() . "\n";
+    $response = $provider->generateImage("Generate an image of a dog playing chess.");
+    $response->saveFile("output/test5_image.png");
+
+    echo "Model: " . ($response->getMetadata()['model']) . "\n";
+    echo "File saved to: output/test5_image.png\n";
+    echo "\n";
+
+    // Test 6: Uses provider's config default 
+    // (no model in options, 
+    // no default model, 
+    // config has model)
+    $providerWithConfig = new OpenAIProvider([
+        'api_key' => $api_key,
+        'model' => 'dall-e-3' // Set default model in config
+    ]);
+
+    echo "Test 6: generateImage with provider's config default model (should use 'dall-e-3')\n";
+    echo str_repeat('-', 50) . "\n";
+    $response = $providerWithConfig->generateImage("Generate an image of gray tabby cat hugging an otter with an orange scarf. Make it look realistic.");
+    
+    $response->saveFile("output/test6_image.png");
+    echo "Model: " . ($response->getMetadata()['model']) . "\n";
+    echo "File saved to: output/test6_image.png\n";
+
     echo "\n";
 
     echo "\n" . str_repeat('=', 60) . "\n";
