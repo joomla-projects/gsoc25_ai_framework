@@ -11,10 +11,10 @@ namespace Joomla\AI\Exception;
 
 /**
  * Exception for unserializable or malformed responses from AI providers.
- * 
+ *
  * Handles cases where the API response cannot be properly parsed or processed,
  * such as invalid JSON, unexpected response structure, corrupted data, or empty responses.
- * 
+ *
  * @since  __DEPLOY_VERSION__
  */
 class UnserializableResponseException extends AIException

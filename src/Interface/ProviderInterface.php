@@ -37,10 +37,10 @@ interface ProviderInterface
     // Should be a smart router in future versions.
     /**
      * Send a prompt to the AI provider and return a Response object with the response.
-     * 
+     *
      * @param   string  $prompt     The prompt to send to the AI provider.
      * @param   array   $options    An associative array of options to send with the request.
-     * 
+     *
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */

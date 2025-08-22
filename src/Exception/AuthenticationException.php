@@ -11,7 +11,7 @@ namespace Joomla\AI\Exception;
 
 /**
  * Exception for authentication and authorization errors from AI providers.
- * 
+ *
  * @since  __DEPLOY_VERSION__
  */
 class AuthenticationException extends AIException

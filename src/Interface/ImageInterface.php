@@ -20,10 +20,10 @@ interface ImageInterface
 {
     /**
      * Generate an image from the text prompt given to the AI provider.
-     * 
+     *
      * @param   string  $prompt     The text prompt describing the desired image
      * @param   array   $options   An associative array of options to send with the request.
-     * 
+     *
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */
@@ -35,7 +35,7 @@ interface ImageInterface
      * @param   string  $imagePath  Path to the image file to modify.
      * @param   string  $prompt     Text description of the desired modifications
      * @param   array   $options   An associative array of options to send with the request.
-     * 
+     *
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
@@ -46,7 +46,7 @@ interface ImageInterface
      *
      * @param   string  $imagePath  Path to the source image file.
      * @param   array   $options   An associative array of options to send with the request.
-     * 
+     *
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
