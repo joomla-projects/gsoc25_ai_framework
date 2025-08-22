@@ -175,7 +175,7 @@ abstract class AbstractProvider implements ProviderInterface
     /**
      * Make HTTP DELETE request.
      *
-     * @param   string  $url      API endpoint URL  
+     * @param   string  $url      API endpoint URL
      * @param   mixed   $data     Data to send with DELETE request
      * @param   array   $headers  HTTP headers
      * @param   integer $timeout  Request timeout
@@ -190,8 +190,7 @@ abstract class AbstractProvider implements ProviderInterface
             $response = $this->httpFactory->getHttp([])->delete($url, $headers, $timeout, $data);
 
             $this->validateResponse($response);
-            
-        } catch (AuthenticationException|RateLimitException|QuotaExceededException $e) {
+        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
             throw $e;
         } catch (ProviderException $e) {
             throw $e;

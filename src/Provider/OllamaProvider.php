@@ -18,7 +18,7 @@ class OllamaProvider extends AbstractProvider
 {
     /**
      * Custom base URL for API requests
-     * 
+     *
      * @var string
      * @since  __DEPLOY_VERSION__
      */
@@ -29,15 +29,15 @@ class OllamaProvider extends AbstractProvider
      *
      * @param   array|\ArrayAccess  $options     Provider options array.
      * @param   HttpFactory         $httpFactory The http factory
-     * 
+     *
      * @since  __DEPLOY_VERSION__
      */
     public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
-        
+
         $this->baseUrl = $this->getOption('base_url', 'http://localhost:11434');
-        
+
         // Remove trailing slash if present
         if (substr($this->baseUrl, -1) === '/') {
             $this->baseUrl = rtrim($this->baseUrl, '/');
@@ -63,7 +63,7 @@ class OllamaProvider extends AbstractProvider
 
     /**
      * Ensure server is running
-     * 
+     *
      * @throws  AuthenticationException  If the server is not running
      * @since  __DEPLOY_VERSION__
      */
@@ -158,7 +158,7 @@ class OllamaProvider extends AbstractProvider
 
         $response = $this->makeGetRequest($this->baseUrl . '/api/tags');
         $data = $this->parseJsonResponse($response->getBody());
-        
+
         return array_column($data['models'], 'name');
     }
 
@@ -202,12 +202,12 @@ class OllamaProvider extends AbstractProvider
         if (in_array($modelName, $availableModels)) {
             return true;
         }
-        
+
         // Check with :latest suffix added
         if (!str_ends_with($modelName, ':latest') && in_array($modelName . ':latest', $availableModels)) {
             return true;
         }
-        
+
         // Check with :latest suffix removed
         if (str_ends_with($modelName, ':latest')) {
             $baseModelName = str_replace(':latest', '', $modelName);
@@ -215,7 +215,7 @@ class OllamaProvider extends AbstractProvider
                 return true;
             }
         }
-                
+
         return false;
     }
 
@@ -224,7 +224,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @param string $sourceModel      The name of the source model to copy
      * @param string $destinationModel The new name for the copied model
-     * 
+     *
      * @return bool                    True if copy was successful
      * @since __DEPLOY_VERSION__
      */
@@ -270,7 +270,7 @@ class OllamaProvider extends AbstractProvider
      * Delete a model and its data.
      *
      * @param string $modelName        The name of the model to delete
-     * 
+     *
      * @return bool                    True if deletion was successful
      * @throws ProviderException       If the deletion fails or model does not exist
      * @since __DEPLOY_VERSION__
@@ -318,7 +318,7 @@ class OllamaProvider extends AbstractProvider
      * @param   string  $modelName  Name of the model to pull
      * @param   bool    $stream     Whether to stream the response (for progress updates)
      * @param   bool    $insecure   Allow insecure connections to the library
-     * 
+     *
      * @return  bool    True if model was pulled successfully
      * @throws  InvalidArgumentException  If model doesn't exist in Ollama library
      * @throws  ProviderException        If pull fails for other reasons
@@ -335,7 +335,7 @@ class OllamaProvider extends AbstractProvider
         }
 
         $endpoint = $this->getPullEndpoint();
-        
+
         $requestData = [
             'model' => $modelName
         ];
@@ -345,7 +345,7 @@ class OllamaProvider extends AbstractProvider
         if (!$stream) {
             $requestData['stream'] = false;
         }
-        
+
         try {
             $jsonData = json_encode($requestData);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -361,39 +361,42 @@ class OllamaProvider extends AbstractProvider
                 $data = $this->parseJsonResponse($response->getBody());
                 return isset($data['status']) && $data['status'] === 'success';
             }
-            
+
             $body = $response->getBody();
             $fullContent = (string) $body;
-            
+
             $lines = explode("\n", $fullContent);
             $hasError = false;
             $errorMessage = '';
-            
+
             foreach ($lines as $line) {
                 $line = trim($line);
-                if (empty($line)) continue;
-                
+                if (empty($line)) {
+                    continue;
+                }
+
                 $data = json_decode($line, true);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     continue;
                 }
-    
+
                 // Check for error in response
                 if (isset($data['error'])) {
                     $errorMessage = $data['error'];
-                    
+
                     // Check if this is a "model not found" type error
-                    if (strpos(strtolower($errorMessage), 'file does not exist') !== false ||
+                    if (
+                        strpos(strtolower($errorMessage), 'file does not exist') !== false ||
                         strpos(strtolower($errorMessage), 'model') !== false && strpos(strtolower($errorMessage), 'not found') !== false ||
-                        strpos(strtolower($errorMessage), 'manifest') !== false && strpos(strtolower($errorMessage), 'not found') !== false) {
-                        
+                        strpos(strtolower($errorMessage), 'manifest') !== false && strpos(strtolower($errorMessage), 'not found') !== false
+                    ) {
                         throw InvalidArgumentException::invalidModel(
                             $modelName,
                             $this->getName(),
                             []
                         );
                     }
-                    
+
                     // For other errors, throw ProviderException
                     throw new ProviderException(
                         $this->getName(),
@@ -401,18 +404,22 @@ class OllamaProvider extends AbstractProvider
                     );
                 }
             }
-            
+
             // Check if success status exists in the response
             if (strpos($fullContent, '"status":"success"') !== false) {
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line)) continue;
-                    
+                    if (empty($line)) {
+                        continue;
+                    }
+
                     $data = json_decode($line, true);
-                    if (json_last_error() !== JSON_ERROR_NONE) continue;
-                    
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        continue;
+                    }
+
                     $status = $data['status'] ?? '';
-                    
+
                     if (strpos($status, 'pulling') === 0 && isset($data['digest'])) {
                         $digest = $data['digest'];
                         $total = $data['total'] ?? 0;
@@ -429,10 +436,10 @@ class OllamaProvider extends AbstractProvider
                         echo "\nModel $modelName successfully pulled!\n";
                     }
                 }
-                
+
                 return true;
-            } 
-        }  catch (InvalidArgumentException $e) {
+            }
+        } catch (InvalidArgumentException $e) {
             throw $e;
         } catch (ProviderException $e) {
             throw $e;
@@ -470,7 +477,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @param   string|array  $message   The user message to send
      * @param   array   $options  Additional options
-     * 
+     *
      * @return  array   The request payload
      * @throws  \InvalidArgumentException  If model does not support chat capability
      * @since  __DEPLOY_VERSION__
@@ -502,7 +509,7 @@ class OllamaProvider extends AbstractProvider
             'messages' => $messages,
             'stream' => false
         ];
-        
+
         if (isset($options['stream'])) {
             $payload['stream'] = (bool) $options['stream'];
         }
@@ -515,7 +522,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @param   string  $message   The user message to send
      * @param   array   $options  Additional options
-     * 
+     *
      * @return  Response  The AI response
      * @throws  ProviderException  If the request fails
      * @since   __DEPLOY_VERSION__
@@ -523,9 +530,9 @@ class OllamaProvider extends AbstractProvider
     public function chat(string $message, array $options = []): Response
     {
         $payload = $this->buildChatRequestPayload($message, $options);
-        
+
         $endpoint = $this->getChatEndpoint();
-        
+
         $jsonData = json_encode($payload);
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new ProviderException(
@@ -533,17 +540,17 @@ class OllamaProvider extends AbstractProvider
                 ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
             );
         }
-        
+
         $httpResponse = $this->makePostRequest(
-            $endpoint, 
+            $endpoint,
             $jsonData,
         );
-                    
+
         // Check if this is a streaming response
         if (isset($payload['stream']) && $payload['stream'] === true) {
             return $this->parseOllamaStreamingResponse($httpResponse->getBody(), true);
         }
-        
+
         return $this->parseOllamaResponse($httpResponse->getBody(), true);
     }
 
@@ -569,48 +576,48 @@ class OllamaProvider extends AbstractProvider
             'prompt' => $prompt,
             'stream' => false
         ];
-        
+
         // Handle optional parameters
         if (isset($options['stream'])) {
             $payload['stream'] = (bool) $options['stream'];
         }
-        
+
         if (isset($options['suffix'])) {
             $payload['suffix'] = $options['suffix'];
         }
-        
+
         if (isset($options['images']) && is_array($options['images'])) {
             $payload['images'] = $options['images'];
         }
-        
+
         if (isset($options['format'])) {
             $payload['format'] = $options['format'];
         }
-        
+
         if (isset($options['options']) && is_array($options['options'])) {
             $payload['options'] = $options['options'];
         }
-        
+
         if (isset($options['system'])) {
             $payload['system'] = $options['system'];
         }
-        
+
         if (isset($options['template'])) {
             $payload['template'] = $options['template'];
         }
-        
+
         if (isset($options['context'])) {
             $payload['context'] = $options['context'];
         }
-        
+
         if (isset($options['raw'])) {
             $payload['raw'] = (bool) $options['raw'];
         }
-        
+
         if (isset($options['keep_alive'])) {
             $payload['keep_alive'] = $options['keep_alive'];
         }
-        
+
         return $payload;
     }
 
@@ -627,9 +634,9 @@ class OllamaProvider extends AbstractProvider
     public function generate(string $prompt, array $options = []): Response
     {
         $payload = $this->buildGenerateRequestPayload($prompt, $options);
-        
+
         $endpoint = $this->getGenerateEndpoint();
-        
+
         $jsonData = json_encode($payload);
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new ProviderException(
@@ -637,26 +644,26 @@ class OllamaProvider extends AbstractProvider
                 ['message' => 'Failed to encode request data: ' . json_last_error_msg()]
             );
         }
-        
+
         $httpResponse = $this->makePostRequest(
-            $endpoint, 
+            $endpoint,
             $jsonData,
         );
-                
+
         // Check if this is a streaming response
         if (isset($payload['stream']) && $payload['stream'] === true) {
             return $this->parseOllamaStreamingResponse($httpResponse->getBody(), false);
         }
-        
+
         return $this->parseOllamaResponse($httpResponse->getBody(), false);
     }
 
     /**
-     * Parse a streaming response from Ollama API 
+     * Parse a streaming response from Ollama API
      *
      * @param   string  $responseBody  The raw response body
      * @param   bool    $isChat        Whether this is a chat response (true) or generate response (false)
-     * 
+     *
      * @return  Response  The parsed response
      * @since   __DEPLOY_VERSION__
      */
@@ -665,21 +672,25 @@ class OllamaProvider extends AbstractProvider
         $lines = explode("\n", $responseBody);
         $fullContent = '';
         $lastMetadata = [];
-        
+
         foreach ($lines as $line) {
             $line = trim($line);
-            if ($line === '') continue;
+            if ($line === '') {
+                continue;
+            }
 
             $data = json_decode($line, true);
-            if (json_last_error() !== JSON_ERROR_NONE) continue;
-            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                continue;
+            }
+
             // Accumulate content from each chunk - handle both chat and generate formats
             if ($isChat && isset($data['message']['content'])) {
                 $fullContent .= $data['message']['content'];
             } elseif (!$isChat && isset($data['response'])) {
                 $fullContent .= $data['response'];
             }
-            
+
             // Keep track of the last metadata
             if ($data['done'] === true) {
                 $lastMetadata = [
@@ -694,19 +705,19 @@ class OllamaProvider extends AbstractProvider
                     'eval_count' => $data['eval_count'],
                     'eval_duration' => $data['eval_duration']
                 ];
-                
+
                 // Add chat-specific metadata
                 if ($isChat && isset($data['message']['role'])) {
                     $lastMetadata['role'] = $data['message']['role'];
                 }
-                
+
                 // Add generate-specific metadata
                 if (!$isChat && isset($data['context'])) {
                     $lastMetadata['context'] = $data['context'];
                 }
             }
         }
-        
+
         $statusCode = isset($lastMetadata['done_reason']) ? $this->determineAIStatusCode($lastMetadata) : 200;
 
         return new Response(
@@ -722,7 +733,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @param   string  $responseBody  The raw response body
      * @param   bool    $isChat        Whether this is a chat response (true) or generate response (false)
-     * 
+     *
      * @return  Response  The parsed response
      * @throws  ProviderException  If the response contains an error
      * @since   __DEPLOY_VERSION__
@@ -730,14 +741,14 @@ class OllamaProvider extends AbstractProvider
     private function parseOllamaResponse(string $responseBody, bool $isChat = true): Response
     {
         $data = $this->parseJsonResponse($responseBody);
-        
+
         if (isset($data['error'])) {
             throw new ProviderException($this->getName(), $data);
         }
 
         // Extract content based on whether it's a chat or generate response
         $content = $isChat ? ($data['message']['content'] ?? '') : ($data['response'] ?? '');
-        
+
         $statusCode = isset($data['done_reason']) ? $this->determineAIStatusCode($data) : 200;
 
         // Build common metadata
@@ -753,12 +764,12 @@ class OllamaProvider extends AbstractProvider
             'eval_count' => $data['eval_count'] ?? 0,
             'eval_duration' => $data['eval_duration'] ?? 0
         ];
-        
+
         // Add chat-specific metadata
         if ($isChat && isset($data['message']['role'])) {
             $metadata['role'] = $data['message']['role'];
         }
-        
+
         // Add generate-specific metadata
         if (!$isChat && isset($data['context'])) {
             $metadata['context'] = $data['context'];
@@ -775,21 +786,21 @@ class OllamaProvider extends AbstractProvider
     private function determineAIStatusCode(array $data): int
     {
         $finishReason = $data['done_reason'];
-        
+
         switch ($finishReason) {
             case 'stop':
                 return 200;
-                
+
             case 'length':
                 return 206;
-                
+
             case 'content_filter':
                 return 422;
-                
+
             case 'tool_calls':
             case 'function_call':
                 return 202;
-                
+
             default:
                 return 200;
         }
