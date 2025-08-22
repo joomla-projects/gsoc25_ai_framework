@@ -32,7 +32,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
+    public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -165,7 +165,6 @@ class OllamaProvider extends AbstractProvider
     /**
      * List models currently loaded into memory (running) and echo their names.
      *
-     * @return array Array of running model info
      * @throws ProviderException If the request fails
      * @since __DEPLOY_VERSION__
      */
@@ -319,7 +318,6 @@ class OllamaProvider extends AbstractProvider
      * @param   bool    $stream     Whether to stream the response (for progress updates)
      * @param   bool    $insecure   Allow insecure connections to the library
      *
-     * @return  bool    True if model was pulled successfully
      * @throws  InvalidArgumentException  If model doesn't exist in Ollama library
      * @throws  ProviderException        If pull fails for other reasons
      * @since   __DEPLOY_VERSION__
@@ -626,7 +624,7 @@ class OllamaProvider extends AbstractProvider
      *
      * @param   string    $prompt    The prompt to generate a response for
      * @param   array     $options   Additional options
-     * @param   callable  $callback  Optional callback function for streaming responses
+     *
      * @return  Response  The AI response
      * @throws  ProviderException  If the request fails
      * @since   __DEPLOY_VERSION__

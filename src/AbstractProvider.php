@@ -58,7 +58,7 @@ abstract class AbstractProvider implements ProviderInterface
      * @throws  \InvalidArgumentException
      * @since  ___DEPLOY_VERSION___
      */
-    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
+    public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
         // Validate provider is suported
         if (!\is_array($options) && !($options instanceof \ArrayAccess)) {
@@ -340,9 +340,9 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
-     * Get audio MIME type from file path.
+     * Get audio MIME type from the input.
      *
-     * @param   string  $filepath  The file path
+     * @param   string  $input
      *
      * @return  string  The MIME type
      * @since   __DEPLOY_VERSION__

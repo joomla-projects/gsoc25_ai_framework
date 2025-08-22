@@ -20,14 +20,11 @@ class QuotaExceededException extends AIException
      * Constructor.
      *
      * @param   string        $provider          The AI provider name
-     * @param   string        $message           The error message
-     * @param   array         $context           Additional context data
      * @param   int|null      $httpStatusCode    The actual HTTP status code from response
-     * @param   string|null   $providerErrorCode The provider-specific error code
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function __construct(string $provider, array $errorData, int $httpStatusCode)
+    public function __construct(string $provider, array $errorData, $httpStatusCode)
     {
         $context = ['error_data' => $errorData];
         $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;

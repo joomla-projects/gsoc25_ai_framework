@@ -22,8 +22,6 @@ interface AudioInterface
      * Generate speech audio from text input.
      *
      * @param   string  $text     The text to convert to speech
-     * @param   string  $model    The TTS model to use for speech generation
-     * @param   string  $voice    The voice to use for speech generation
      * @param   array   $options  Additional options for speech generation
      *
      * @return  Response
@@ -59,7 +57,6 @@ interface AudioInterface
      * Transcribe audio to text.
      *
      * @param   string  $audioFile  Path to the audio file to transcribe
-     * @param   string  $model      The transcription model to use
      * @param   array   $options    Additional options for transcription
      *
      * @return  Response
@@ -71,7 +68,6 @@ interface AudioInterface
      * Translate audio to English text.
      *
      * @param   string  $audioFile  Path to audio file to translate
-     * @param   string  $model      Model to use for translation
      * @param   array   $options    Additional options
      *
      * @return  Response
