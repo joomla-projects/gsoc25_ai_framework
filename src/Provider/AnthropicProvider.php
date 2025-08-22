@@ -42,7 +42,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
+    public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -143,9 +143,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     /**
      * List available models from Anthropic.
      *
-     * @param   array  $options  Optional parameters for the request
-     *
-     * @return  Response  The response containing model list
+     * @return  array
      * @since  __DEPLOY_VERSION__
      */
     public function getAvailableModels(): array

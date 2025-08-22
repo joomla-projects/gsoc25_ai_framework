@@ -124,7 +124,7 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct(array $options = [], ?HttpFactory $httpFactory = null)
+    public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -573,8 +573,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Generate speech audio from text input.
      *
      * @param   string  $text     The text to convert to speech
-     * @param   string  $model    The model to use for speech synthesis
-     * @param   string  $voice    The voice to use for speech synthesis
      * @param   array   $options  Additional options for speech generation
      *
      * @return  Response
@@ -602,7 +600,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Transcribe audio into text.
      *
      * @param   string  $audioFile  Path to audio file
-     * @param   string  $model      The transcription model to use
      * @param   array   $options    Additional options for transcription
      *
      * @return  Response  The AI response containing transcribed text
@@ -627,7 +624,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Translate audio to English text.
      *
      * @param   string  $audioFile  Path to audio file
-     * @param   string  $model      Model to use for translation
      * @param   array   $options    Additional options
      *
      * @return  Response  Translation response
@@ -722,7 +718,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * @param   array  $moderationResult  Result from moderate() method
      *
      * @return  bool
-     * @throws  \InvalidArgumentException
      * @since   __DEPLOY_VERSION__
      */
     public function isContentFlagged(array $moderationResult): bool
@@ -909,7 +904,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      *
      * @param   string  $prompt      The image generation prompt.
      * @param   array   $options     Additional options for the request.
-     * @param   string  $capability  Required capability.
      *
      * @return  array  The request payload.
      * @since   __DEPLOY_VERSION__
@@ -1194,8 +1188,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Build payload for text-to-speech request.
      *
      * @param   string  $text     The text to convert to speech
-     * @param   string  $model    The model to use for speech synthesis
-     * @param   string  $voice    The voice to use for speech synthesis
      * @param   array   $options  Additional options for speech generation
      *
      * @return  array  The request payload.
@@ -1268,7 +1260,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Build payload for transcription request.
      *
      * @param   string  $audioFile  The audio file
-     * @param   string  $model      The transcription model
      * @param   array   $options    Additional options
      *
      * @return  array   Form data for multipart request
@@ -1378,7 +1369,6 @@ class OpenAIProvider extends AbstractProvider implements ChatInterface, ModelInt
      * Build payload for translation request.
      *
      * @param   string  $audioFile  Path to the audio file
-     * @param   string  $model      The translation model to use
      * @param   array   $options    Additional options for translation
      *
      * @return  array   Form data for multipart request
