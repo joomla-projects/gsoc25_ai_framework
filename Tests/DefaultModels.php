@@ -33,6 +33,7 @@ try {
     // and the default model is set
     echo "Test 1: Simple prompt- Will use default model gpt-3.5-turbo\n";
     echo str_repeat('-', 50) . "\n";
+
     $response = $provider->chat("Hello! How are you?");
     echo "Model: " . $response->getMetadata()['model'] . "\n";
     echo "Response: " . $response->getContent() . "\n";
@@ -64,6 +65,7 @@ try {
 
     $metadata = $response->getMetadata();
     echo "Model: " . $response->getMetadata()['model'] . "\n";
+
     if (isset($metadata['choices'][0]['message']['audio']['data'])) {
         $audioData = $metadata['choices'][0]['message']['audio']['data'];
         $audioDatab64 = base64_decode($audioData, true);
@@ -119,6 +121,7 @@ try {
     $response->saveFile("output/test6_image.png");
     echo "Model: " . ($response->getMetadata()['model']) . "\n";
     echo "File saved to: output/test6_image.png\n";
+
     echo "\n";
 
     echo "\n" . str_repeat('=', 60) . "\n";
