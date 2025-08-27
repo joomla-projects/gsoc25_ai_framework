@@ -49,21 +49,7 @@ You will need API keys from the providers you want to use:
 
 ### Storing API Keys
 
-**It is recommended to store API keys in environment variables** for security reasons. Never commit API keys to version control.
-
-**Windows (Command Prompt):**
-```cmd
-setx OPENAI_API_KEY "sk-your-openai-key-here"
-setx ANTHROPIC_API_KEY "sk-ant-your-anthropic-key-here"
-```
-
-**Windows (PowerShell):**
-```powershell
-[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "sk-your-openai-key-here", "User")
-[Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-your-anthropic-key-here", "User")
-```
-
-> **Note**: Restart your terminal or web server after setting environment variables to ensure they are loaded.
+You should not hardcode your API keys into your program code. Make them configurable via for example a registry object or by storing them in environment variables. **Never commit API keys to version control.**
 
 ## Your First Request
 
