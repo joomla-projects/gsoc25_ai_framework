@@ -16,6 +16,7 @@ use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ModerationInterface;
@@ -27,7 +28,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, AudioInterface, ModerationInterface
+class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface
 {
     /**
      * Custom base URL for API requests

@@ -52,7 +52,7 @@ abstract class AbstractProvider implements ProviderInterface
     /**
      * Constructor.
      *
-     * @param   array|\ArrayAccess  $options  Provider options array.
+     * @param   mixed         $options      Provider options array.
      * @param   HttpFactory   $httpFactory  The http factory
      *
      * @throws  \InvalidArgumentException
