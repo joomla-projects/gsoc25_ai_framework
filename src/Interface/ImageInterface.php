@@ -39,7 +39,7 @@ interface ImageInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    // public function editImage(string $imagePath, string $prompt, array $options = []): Response;
+    public function editImage(string $imagePath, string $prompt, array $options = []): Response;
 
     /**
      * Create alternative versions of an image from the text prompt given to the AI provider.
@@ -50,5 +50,5 @@ interface ImageInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    // public function createImageVariations(string $imagePath, array $options = []): Response;
+    public function createImageVariation(string $imagePath, array $options = []): Response;
 }

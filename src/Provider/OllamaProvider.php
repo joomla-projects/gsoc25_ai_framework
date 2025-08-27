@@ -6,6 +6,7 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -14,7 +15,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OllamaProvider extends AbstractProvider
+class OllamaProvider extends AbstractProvider implements ProviderInterface
 {
     /**
      * Custom base URL for API requests
