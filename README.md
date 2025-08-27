@@ -113,7 +113,6 @@ try {
 - **[Getting Started](docs/getting-started.md)**  
   Install, configure, first provider  
 
-- **[Guides](guides/)**  
-  Task-specific guides (Chat, Images, Audio, etc.)  
-
+- **[Guides](providers/)**  
+  Provider-specific guides with code examples
 ---
