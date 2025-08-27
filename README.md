@@ -110,7 +110,7 @@ try {
 - **[Overview](docs/overview.md)**  
   Architecture & goals  
 
-- **[Getting Started](guides/index.md)**  
+- **[Getting Started](docs/getting-started.md)**  
   Install, configure, first provider  
 
 - **[Guides](guides/)**  
