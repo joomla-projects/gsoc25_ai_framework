@@ -107,7 +107,7 @@ try {
 
 ## Documentation
 
-- **[Overview](guides/overview.md)**  
+- **[Overview](docs/overview.md)**  
   Architecture & goals  
 
 - **[Getting Started](guides/index.md)**  
