@@ -43,9 +43,9 @@ Each provider is instantiated with its configuration (API key, defaults such as 
 
 ### OpenAI:
 ```php
-use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\AI\AIFactory;
 
-$openai = new OpenAIProvider([
+$openai = AIFactory::getAI('openai', [
   'api_key' => getenv('OPENAI_API_KEY'),
   // Optional defaults:
   // 'model' => 'gpt-4o',
@@ -55,9 +55,9 @@ $openai = new OpenAIProvider([
 
 ### Anthropic:
 ```php
-use Joomla\AI\Provider\AnthropicProvider;
+use Joomla\AI\AIFactory;
 
-$anthropic = new AnthropicProvider([
+$anthropic = AIFactory::getAI('anthropic', [
   'api_key' => getenv('ANTHROPIC_API_KEY'),
   // 'model' => 'claude-3-5-sonnet',
 ]);
@@ -65,9 +65,9 @@ $anthropic = new AnthropicProvider([
 
 ### Ollama (local):
 ```php
-use Joomla\AI\Provider\OllamaProvider;
+use Joomla\AI\AIFactory;
 
-$ollama = new OllamaProvider([
+$ollama = AIFactory::getAI('ollama', [
   // 'base_url' => 'http://localhost:11434',
   // 'model' => 'llama3',
 ]);

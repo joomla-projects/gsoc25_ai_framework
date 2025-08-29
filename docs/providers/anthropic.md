@@ -13,9 +13,9 @@ The Anthropic Provider ([`AnthropicProvider`](../../src/Provider/AnthropicProvid
 ## Configuration
 
 ```php
-use Joomla\AI\Provider\AnthropicProvider;
+use Joomla\AI\AIFactory;
 
-$anthropic = new AnthropicProvider([
+$anthropic = AIFactory::getAI('anthropic', [
     'api_key' => getenv('ANTHROPIC_API_KEY'),
     'model' => 'claude-3-5-sonnet' // Optional: default model
 ]);

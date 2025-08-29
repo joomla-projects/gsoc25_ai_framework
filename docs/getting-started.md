@@ -59,10 +59,10 @@ You should not hardcode your API keys into your program code. Make them configur
 <?php
 require_once 'vendor/autoload.php';
 
-use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\AI\AIFactory;
 
 // Create provider instance
-$openai = new OpenAIProvider([
+$openai = AIFactory::getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY')
 ]);
 
@@ -81,15 +81,13 @@ echo "Provider: " . $response->getProvider() . "\n";
 <?php
 require_once 'vendor/autoload.php';
 
-use Joomla\AI\Provider\OpenAIProvider;
-use Joomla\AI\Provider\AnthropicProvider;
-use Joomla\AI\Provider\OllamaProvider;
+use Joomla\AI\AIFactory;
 
 // Configure multiple providers
 $providers = [
-    'openai' => new OpenAIProvider(['api_key' => getenv('OPENAI_API_KEY')]),
-    'anthropic' => new AnthropicProvider(['api_key' => getenv('ANTHROPIC_API_KEY')]),
-    'ollama' => new OllamaProvider() // Local server, no API key needed
+    'openai' => $openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]),
+    'anthropic' => nAIFactory::getAI('anthropic', ['api_key' => getenv('ANTHROPIC_API_KEY')]),
+    'ollama' => AIFactory::getAI('ollama', []) // Local server, no API key needed
 ];
 
 $question = "What is Joomla?";
@@ -110,9 +108,9 @@ foreach ($providers as $name => $provider) {
 ### Image Generation
 
 ```php
-use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\AI\AIFactory;
 
-$openai = new OpenAIProvider(['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Generate an image
 $image = $openai->generateImage("A beautiful sunset over mountains", [
@@ -155,7 +153,7 @@ echo "Vision analysis: " . $vision->getContent() . "\n";
 Avoid repeating model names by setting defaults:
 
 ```php
-$openai = new OpenAIProvider(['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Set a default model for all chat requests
 $openai->setDefaultModel('gpt-4o-mini');
@@ -212,9 +210,9 @@ For local AI without API costs:
 3. **Use in your code**:
 
 ```php
-use Joomla\AI\Provider\OllamaProvider;
+use Joomla\AI\AIFactory;
 
-$ollama = new OllamaProvider();
+$ollama = AIFactory::getAI('ollama');
 
 $response = $ollama->chat("Hello!", ['model' => 'llama3']);
 echo $response->getContent();

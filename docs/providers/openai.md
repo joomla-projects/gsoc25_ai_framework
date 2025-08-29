@@ -21,9 +21,9 @@ The OpenAI Provider ([`OpenAIProvider`](../../src/Provider/OpenAIProvider.php)) 
 ## Configuration
 
 ```php
-use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\AI\AIFactory;
 
-$openai = new OpenAIProvider([
+$openai = AIFactory::getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY'),
     'base_url' => 'https://api.openai.com/v1', // Optional: custom endpoint
     'model' => 'gpt-4o-mini' // Optional: default model

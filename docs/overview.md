@@ -35,6 +35,15 @@ Centralizes common functionality:
 - Error mapping (401→Auth, 429→RateLimit/Quota, etc.)
 - JSON response parsing
 
+**AI Factory** (`/src/AIFactory.php`)
+Centralized provider instantiation and management:
+- `getAI($provider, $options)` - Creates provider instances by name
+- Provider registry with supported providers ('openai', 'anthropic', 'ollama')
+- Simplifies provider switching and configuration management
+
+**AI Class** (`/src/AI.php`)
+- Wrapper providing access to all AI capabilities.
+
 **Response Object** (`/src/Response/Response.php`)
 Unified response wrapper that extends Joomla's HttpResponse:
 - `getContent()` - Primary result (text, base64 image, binary audio)
@@ -62,8 +71,8 @@ All exceptions inherit from [`AIException`](../src/Exception/AIException.php):
 ### Provider Abstraction
 ```php
 // Same interface, different providers
-$openai = new OpenAIProvider(['api_key' => $key]);
-$anthropic = new AnthropicProvider(['api_key' => $key]);
+$openai = AIFactory::getAI('openai', ['api_key' => $key]);
+$anthropic = AIFactory::getAI('anthropic', ['api_key' => $anthropic_key]);
 
 // Identical usage
 $response1 = $openai->chat("Hello!");
