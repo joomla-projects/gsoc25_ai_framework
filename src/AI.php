@@ -45,7 +45,7 @@ class AI
      * @param   array   $arguments  The arguments passed to the method
      *
      * @return  mixed
-     * @throws  \ProviderException  If the provider doesn't have the method
+     * @throws  ProviderException  If the provider doesn't have the method
      * @since   __DEPLOY_VERSION__
      */
     public function __call(string $method, array $arguments)
