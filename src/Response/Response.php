@@ -100,13 +100,13 @@ class Response extends HttpResponse
             $baseName = pathinfo($filename, PATHINFO_FILENAME);
             $ext = pathinfo($filename, PATHINFO_EXTENSION) ?: 'png';
 
-            $data = json_decode($content, true);
-            if ($imageCount === 1 && is_string($content)) {
+            if ($imageCount === 1) {
                 $decodedContent = base64_decode($content);
                 if (File::write($filename, $decodedContent)) {
                     $savedFiles[] = $filename;
                 }
-            } elseif (is_array($data)) {
+            } else {
+                $data = json_decode($content, true);
                 foreach ($data as $index => $b64) {
                     $file = Path::clean($dir . '/' . $baseName . '_' . ($index + 1) . '.' . $ext);
                     $decodedContent = base64_decode($b64);
@@ -124,7 +124,7 @@ class Response extends HttpResponse
             $data = json_decode($content, true);
 
             $lines = [];
-            if ($imageCount === 1 && is_string($content)) {
+            if ($imageCount === 1) {
                 $lines[] = "  Image URL: " . $content;
             } elseif (is_array($data)) {
                 foreach ($data as $index => $url) {
@@ -150,7 +150,7 @@ class Response extends HttpResponse
         }
 
         // For all other content
-        if ($content !== null) {
+        if ($content !== '') {
             if (File::write($filename, $content)) {
                 return [$filename];
             }

@@ -10,7 +10,6 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
-use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;

@@ -9,8 +9,6 @@
 
 namespace Joomla\AI\Interface;
 
-use Joomla\AI\Response\Response;
-
 /**
  * AI provider class interface.
  *
@@ -34,15 +32,11 @@ interface ProviderInterface
      */
     public function getName(): string;
 
-    // Should be a smart router in future versions.
     /**
-     * Send a prompt to the AI provider and return a Response object with the response.
+     * Get all available models for this provider.
      *
-     * @param   string  $prompt     The prompt to send to the AI provider.
-     * @param   array   $options    An associative array of options to send with the request.
-     *
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
+     * @return  array  Array of available model names
+     * @since   __DEPLOY_VERSION__
      */
-    // public function prompt(string $prompt, array $options = []): Response;
+    public function getAvailableModels(): array;
 }
