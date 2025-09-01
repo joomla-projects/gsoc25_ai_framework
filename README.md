@@ -113,6 +113,6 @@ try {
 - **[Getting Started](docs/getting-started.md)**  
   Install, configure, first provider  
 
-- **[Guides](providers/)**  
+- **[Guides](docs/providers/)**  
   Provider-specific guides with code examples
 ---
