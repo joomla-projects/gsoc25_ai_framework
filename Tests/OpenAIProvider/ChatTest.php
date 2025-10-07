@@ -2,8 +2,8 @@
 
 use Joomla\Http\Http;
 use Joomla\Http\HttpFactory;
-use Joomla\Http\Response as HttpResponse;
 use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
 class ChatTest extends TestCase
@@ -27,19 +27,30 @@ class ChatTest extends TestCase
             ],
         ]);
 
+        $fakeModerationResponseBody = json_encode([
+            'id'      => 'modr-test',
+            'model'   => 'text-moderation-001',
+            'results' => [
+                [
+                    'flagged'     => false,
+                ],
+            ],
+        ]);
+
         $httpFactoryMock  = $this->createMock(HttpFactory::class);
         $httpClientMock   = $this->createMock(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
-        $response = new HttpResponse('php://memory', 200, ['Content-Type' => 'application/json']);
-        $stream   = $response->getBody();
-        $stream->write($fakeChatResponseBody);
+        $moderationResponse = new HttpResponse('php://memory', 200, ['Content-Type' => 'application/json']);
+        $moderationResponse->getBody()->write($fakeModerationResponseBody);
 
-        $httpClientMock->method('post')->willReturn($response);
+        $chatResponse = new HttpResponse('php://memory', 200, ['Content-Type' => 'application/json']);
+        $chatResponse->getBody()->write($fakeChatResponseBody);
 
-        $provider = new OpenAIProviderNoModeration(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $chatResponse);
 
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
         $response = $provider->chat('Hello! How are you?', ['model' => 'gpt-4o-mini']);
 
         $this->assertEquals(200, $response->getStatusCode());
@@ -47,13 +58,5 @@ class ChatTest extends TestCase
         $metadata = $response->getMetadata();
         $this->assertArrayHasKey('model', $metadata);
         $this->assertArrayHasKey('usage', $metadata);
-    }
-}
-
-class OpenAIProviderNoModeration extends OpenAIProvider
-{
-    protected function moderateInput($input, array $options = []): bool
-    {
-        return false;
     }
 }
