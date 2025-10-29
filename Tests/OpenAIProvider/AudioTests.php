@@ -9,7 +9,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class AudioTest extends TestCase
+class OpenAIAudioTest extends TestCase
 {
 	public function testSpeechGeneratesAudioSuccessfully()
 	{

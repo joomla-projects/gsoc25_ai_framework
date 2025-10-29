@@ -10,7 +10,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class ChatTest extends TestCase
+class AnthropicChatTest extends TestCase
 {
     public function testChatReturnsSuccessfulResponse(): void
     {

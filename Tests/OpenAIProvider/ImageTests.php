@@ -9,7 +9,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class ImageTest extends TestCase
+class OpenAIImageTest extends TestCase
 {
 	public function testGenerateImageReturnsBase64Successfully()
 	{

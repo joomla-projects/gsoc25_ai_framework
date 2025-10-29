@@ -10,7 +10,7 @@ use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class ChatTest extends TestCase
+class OpenAIChatTest extends TestCase
 {
     public function testSimpleChatCompletion()
     {

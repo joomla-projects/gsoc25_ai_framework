@@ -6,7 +6,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class ModelTests extends TestCase
+class OpenAIModelTests extends TestCase
 {
 	public function testChatUsesDefaultModelWhenNotProvided()
 	{

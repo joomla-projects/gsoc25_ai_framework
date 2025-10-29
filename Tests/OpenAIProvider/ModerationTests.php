@@ -9,7 +9,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class ModerationTests extends TestCase
+class OpenAIModerationTests extends TestCase
 {
 	public function testModerateReturnsSafeResult()
 	{
