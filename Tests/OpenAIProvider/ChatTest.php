@@ -1,5 +1,7 @@
 <?php
 
+namespace Joomla\AI\Tests\OpenAIProvider;
+
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
@@ -10,11 +12,11 @@ use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class OpenAIChatTest extends TestCase
+class ChatTest extends TestCase
 {
     public function testSimpleChatCompletion()
     {
-        echo "Test 1: Test chat method for successful completion\n";
+        // Test 1: Test chat method for successful completion
 
         $fakeChatResponseBody = json_encode([
             'id'      => 'chatcmpl-test',
@@ -66,7 +68,7 @@ class OpenAIChatTest extends TestCase
 
     public function testChatRaisesProviderException()
     {
-        echo "Test 2: Test chat method raises ProviderException on server error\n";
+        // Test 2: Test chat method raises ProviderException on server error
 
         $httpFactoryMock = $this->createMock(HttpFactory::class);
         $httpClientMock  = $this->createMock(Http::class);
@@ -96,7 +98,7 @@ class OpenAIChatTest extends TestCase
 
     public function testChatRaisesAuthenticationException()
     {
-        echo "Test 3: Test chat method raises AuthenticationException on unauthorized access\n";
+        // Test 3: Test chat method raises AuthenticationException on unauthorized access
 
         $httpFactoryMock = $this->createMock(HttpFactory::class);
         $httpClientMock  = $this->createMock(Http::class);
@@ -127,7 +129,7 @@ class OpenAIChatTest extends TestCase
 
     public function testChatRaisesRateLimitException()
     {
-        echo "Test 4: Test chat method raises RateLimitException on too many requests\n";
+        // Test 4: Test chat method raises RateLimitException on too many requests
 
         $httpFactoryMock = $this->createMock(HttpFactory::class);
         $httpClientMock  = $this->createMock(Http::class);
@@ -157,8 +159,8 @@ class OpenAIChatTest extends TestCase
 
     public function testChatRaisesUnserializableResponse()
     {
-        echo "Test 5: Test chat method raises UnserializableResponseException on invalid JSON\n";
-        
+        // Test 5: Test chat method raises UnserializableResponseException on invalid JSON
+
         $httpFactoryMock = $this->createMock(HttpFactory::class);
         $httpClientMock  = $this->createMock(Http::class);
         $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
@@ -183,7 +185,7 @@ class OpenAIChatTest extends TestCase
 
     public function testChatHandlesBase64ContentInChoices()
     {
-        echo "Test 6: Test chat method handles base64 encoded content in choices metadata\n";
+        // Test 6: Test chat method handles base64 encoded content in choices metadata
 
         $rawAudio = 'fake-audio-bytes';
         $encodedAudio = base64_encode($rawAudio);
@@ -216,7 +218,7 @@ class OpenAIChatTest extends TestCase
                 ],
             ],
         ]);
-     
+
         $httpFactoryMock = $this->createMock(HttpFactory::class);
         $httpClientMock  = $this->createMock(Http::class);
         $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);

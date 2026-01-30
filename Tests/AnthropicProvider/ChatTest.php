@@ -1,5 +1,7 @@
 <?php
 
+namespace Joomla\AI\Tests\AnthropicProvider;
+
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
@@ -10,7 +12,7 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
-class AnthropicChatTest extends TestCase
+class ChatTest extends TestCase
 {
     public function testChatReturnsSuccessfulResponse(): void
     {
