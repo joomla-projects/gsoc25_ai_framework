@@ -36,46 +36,42 @@ class GeminiProvider extends AbstractProvider implements ProviderInterface, Chat
         'gemini-1.5-flash',
     ];
 
-    public function chat(array $messages, array $options = []): Response
+    public function chat(string $message, array $options = []): Response
     {
         $this->validateApiKey();
 
-        $model = $options['model'] ?? 'gemini-pro';
+        $model = $options['model'] ?? $this->defaultModel ?? 'gemini-pro';
 
         if (!in_array($model, self::CHAT_MODELS, true)) {
             throw new InvalidArgumentException('Unsupported Gemini model: ' . $model);
         }
 
-        $http = HttpFactory::getHttp();
-
         $payload = [
-            'contents' => array_map(
-                static function (array $message): array {
-                    return [
-                        'role'  => $message['role'] ?? 'user',
-                        'parts' => [
-                            ['text' => $message['content'] ?? ''],
-                        ],
-                    ];
-                },
-                $messages
-            ),
+            'contents' => [
+                [
+                    'role'  => 'user',
+                    'parts' => [
+                        ['text' => $message],
+                    ],
+                ]
+            ],
         ];
 
-        try {
-            $response = $http->post(
-                $this->baseUrl . '/models/' . $model . ':generateContent?key=' . $this->getApiKey(),
-                json_encode($payload),
-                ['Content-Type' => 'application/json']
-            );
-        } catch (\Throwable $e) {
-            throw new ProviderException('Gemini API request failed: ' . $e->getMessage(), 0, $e);
-        }
+        // Merge additional options if needed, but for now just message
+        // $payload = array_merge($payload, $options);
+
+        $url = $this->baseUrl . '/models/' . $model . ':generateContent?key=' . $this->getApiKey();
+
+        $response = $this->makePostRequest(
+            $url,
+            json_encode($payload),
+            ['Content-Type' => 'application/json']
+        );
 
         $data = json_decode($response->body, true);
 
         if (!isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-            throw new ProviderException('Invalid response received from Gemini API.');
+            throw new ProviderException('Invalid response received from Gemini API.', $data);
         }
 
         return new Response([
@@ -83,6 +79,24 @@ class GeminiProvider extends AbstractProvider implements ProviderInterface, Chat
             'model'   => $model,
             'raw'     => $data,
         ]);
+    }
+
+    public function vision(string $message, string $image, array $options = []): Response
+    {
+         $this->validateApiKey();
+
+        $model = $options['model'] ?? $this->defaultModel ?? 'gemini-1.5-flash';
+
+         if (!in_array($model, self::CHAT_MODELS, true)) {
+            throw new InvalidArgumentException('Unsupported Gemini model: ' . $model);
+        }
+
+        // Detect if input is a URL or base64
+        // For simplicity assuming base64 or handled by caller for now as per other providers
+        // But Gemini expects inlineData or fileData.
+        
+        // This is a placeholder for full vision support, implementing basic structure
+        throw new ProviderException("Vision not fully implemented for Gemini yet");
     }
 
     public function models(): array
@@ -95,5 +109,10 @@ class GeminiProvider extends AbstractProvider implements ProviderInterface, Chat
         if (!$this->getApiKey()) {
             throw new AuthenticationException('Gemini API key is missing.');
         }
+    }
+
+    private function getApiKey(): ?string
+    {
+        return $this->getOption('api_key');
     }
 }
