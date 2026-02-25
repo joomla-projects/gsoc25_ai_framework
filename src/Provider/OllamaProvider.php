@@ -6,6 +6,7 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
@@ -15,7 +16,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OllamaProvider extends AbstractProvider implements ProviderInterface
+class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface
 {
     /**
      * Custom base URL for API requests
@@ -164,12 +165,13 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     }
 
     /**
-     * List models currently loaded into memory (running) and echo their names.
+     * List models currently loaded into memory (running).
      *
-     * @throws ProviderException If the request fails
-     * @since __DEPLOY_VERSION__
+     * @return  array  Array of running model names
+     * @throws  ProviderException  If the request fails
+     * @since   __DEPLOY_VERSION__
      */
-    public function getRunningModels()
+    public function getRunningModels(): array
     {
         $this->validateConnection();
 
@@ -179,14 +181,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
 
         $models = $data['models'] ?? [];
 
-        if (empty($models)) {
-            echo "No models are currently loaded into memory.\n";
-        } else {
-            echo "Running models:\n";
-            foreach ($models as $model) {
-                echo "- " . ($model['name'] ?? '[unknown]') . "\n";
-            }
-        }
+        return array_column($models, 'name');
     }
 
     /**
@@ -461,11 +456,10 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     {
         $availableModels = $this->getAvailableModels();
 
-        $availableModels = $this->getAvailableModels();
         if (!$this->checkModelExists($modelName, $availableModels)) {
             echo "Model $modelName not found locally. Attempting to pull...\n";
             $this->pullModel($modelName, true, false);
-        } elseif ($this->checkModelExists($modelName, $availableModels)) {
+        } else {
             echo "Model $modelName is already available locally.\n";
         }
         return true;
@@ -803,5 +797,81 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
             default:
                 return 200;
         }
+    }
+
+    /**
+     * Generate a chat completion with vision (image) input.
+     *
+     * Requires a multimodal model such as 'llava'. The image is embedded in
+     * the chat message using Ollama's native `images` field, which accepts
+     * base64-encoded strings or file paths that will be read and encoded.
+     *
+     * @param   string  $message  The chat message about the image.
+     * @param   string  $image    Image URL, file path, or base64-encoded data URI.
+     * @param   array   $options  Additional options (e.g. 'model', 'stream').
+     *
+     * @return  Response
+     * @throws  InvalidArgumentException  If the image cannot be loaded.
+     * @throws  ProviderException         If the API request fails.
+     * @since   __DEPLOY_VERSION__
+     */
+    public function vision(string $message, string $image, array $options = []): Response
+    {
+        $this->validateConnection();
+
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'llava');
+        $this->ensureModelAvailable($model);
+
+        // Resolve image to a raw base64 string (without data-URI prefix)
+        if (preg_match('/^data:image\/[a-zA-Z0-9+\/]+;base64,(.+)$/', $image, $matches)) {
+            // Already a data-URI – extract the base64 payload
+            $base64Image = $matches[1];
+        } elseif (filter_var($image, FILTER_VALIDATE_URL)) {
+            // Fetch from URL and encode
+            $httpResponse = $this->makeGetRequest($image);
+            $base64Image = base64_encode($httpResponse->getBody());
+        } elseif (file_exists($image)) {
+            // Read from the local filesystem and encode
+            $base64Image = base64_encode(file_get_contents($image));
+        } else {
+            throw InvalidArgumentException::invalidParameter(
+                'image',
+                $image,
+                $this->getName(),
+                'Image must be a valid URL, existing file path, or base64 data URI.'
+            );
+        }
+
+        $payload = [
+            'model'   => $model,
+            'stream'  => false,
+            'messages' => [
+                [
+                    'role'    => 'user',
+                    'content' => $message,
+                    'images'  => [$base64Image],
+                ],
+            ],
+        ];
+
+        if (isset($options['stream'])) {
+            $payload['stream'] = (bool) $options['stream'];
+        }
+
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode vision request: ' . json_last_error_msg()]
+            );
+        }
+
+        $httpResponse = $this->makePostRequest($this->getChatEndpoint(), $jsonData);
+
+        if (isset($payload['stream']) && $payload['stream'] === true) {
+            return $this->parseOllamaStreamingResponse($httpResponse->getBody(), true);
+        }
+
+        return $this->parseOllamaResponse($httpResponse->getBody(), true);
     }
 }
