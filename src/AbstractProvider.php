@@ -60,7 +60,7 @@ abstract class AbstractProvider implements ProviderInterface
      */
     public function __construct($options = [], ?HttpFactory $httpFactory = null)
     {
-        // Validate provider is suported
+        // Validate provider is supported
         if (!\is_array($options) && !($options instanceof \ArrayAccess)) {
             throw new \InvalidArgumentException(
                 'The options param must be an array or implement the ArrayAccess interface.'
@@ -326,6 +326,14 @@ abstract class AbstractProvider implements ProviderInterface
         throw new \InvalidArgumentException('Unsupported image format. Only PNG, JPEG, and WebP are supported.');
     }
 
+    /**
+     * Get file extension from image MIME type.
+     *
+     * @param   string  $mimeType  The MIME type string
+     *
+     * @return  string  File extension (without leading dot)
+     * @since   __DEPLOY_VERSION__
+     */
     protected function getExtensionFromMimeType(string $mimeType): string
     {
         switch ($mimeType) {
@@ -367,6 +375,12 @@ abstract class AbstractProvider implements ProviderInterface
             'aac' => 'audio/aac',
             'pcm' => 'audio/pcm',
         ];
+
+        if (!isset($mimeMap[$input])) {
+            throw new \InvalidArgumentException(
+                "Unsupported audio format '{$input}'. Supported formats: " . implode(', ', array_keys($mimeMap)) . '.'
+            );
+        }
 
         return $mimeMap[$input];
     }
