@@ -15,6 +15,6 @@ To report a security issue in the core Joomla! CMS or Framework, or with a jooml
 as possible about the issue. Additional information about our security team and their processes may be found on
 our [Security page](https://developer.joomla.org/security.html).
 
-To report an issue in a Joomla! extension, please submit it to the [Vulnerable Extensions List](https://vel.joomla.org/submit-vel).
+To report an issue in Joomla! extension, please submit it to the [Vulnerable Extensions List](https://vel.joomla.org/submit-vel).
 
 For support with a site which has been attacked, please visit the [Joomla! Forum](https://forum.joomla.org/viewforum.php?f=714).
