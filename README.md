@@ -84,7 +84,7 @@ $ollama = AIFactory::getAI('ollama', [
 Not all providers implement every capability. The framework exposes capabilities via interfaces (e.g. ChatInterface, ImageInterface). Developers can use what each provider supports.
 
 ## Making your first request
-All providers implement a shared set of capability interfaces (e.g., Chat, Images, Audio). Invoke these methods directly, passing per-call options to override defaults.
+All providers implement shared set of capability interfaces (e.g., Chat, Images, Audio). Invoke these methods directly, passing per-call options to override defaults.
 
 ```php
 // Chat example (OpenAI)
@@ -93,7 +93,7 @@ $response = $openai->chat("Write a haiku about Joomla.", [
 ]);
 echo $response->getContent();           // primary content (e.g. text)
 $meta = $response->getMetadata();       // metadata content (e.g. model, usage)
-```
+
 
 ## Error handling
 Provider HTTP errors are mapped to framework exceptions (e.g. auth, rate limit, invalid arguments). Catch and handle them as needed.
