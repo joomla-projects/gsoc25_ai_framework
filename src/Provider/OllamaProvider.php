@@ -267,17 +267,21 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             );
         }
 
-        $httpResponse = $this->makePostRequest($endpoint, $jsonData);
+        try {
+            $httpResponse = $this->makePostRequest($endpoint, $jsonData);
+        } catch (ProviderException $e) {
+            // Ollama answers 404 when the source model does not exist
+            if ($e->getHttpStatusCode() === 404) {
+                throw InvalidArgumentException::invalidModel($sourceModel, $this->getName());
+            }
+
+            throw $e;
+        }
+
         $status = $httpResponse->getStatusCode();
 
         if ($status === 200) {
             return true;
-        } elseif ($status === 404) {
-            throw InvalidArgumentException::invalidModel(
-                $sourceModel,
-                $this->getName(),
-                ['message' => "Source model '$sourceModel' does not exist."]
-            );
         } else {
             throw new ProviderException(
                 $this->getName(),
@@ -312,17 +316,21 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             );
         }
 
-        $httpResponse = $this->makeDeleteRequest($endpoint, $jsonData);
+        try {
+            $httpResponse = $this->makeDeleteRequest($endpoint, $jsonData);
+        } catch (ProviderException $e) {
+            // Ollama answers 404 when the model does not exist
+            if ($e->getHttpStatusCode() === 404) {
+                throw InvalidArgumentException::invalidModel($modelName, $this->getName());
+            }
+
+            throw $e;
+        }
+
         $status = $httpResponse->getStatusCode();
 
         if ($status === 200) {
             return true;
-        } elseif ($status === 404) {
-            throw InvalidArgumentException::invalidModel(
-                $modelName,
-                $this->getName(),
-                ['message' => "Model '$modelName' does not exist."]
-            );
         } else {
             throw new ProviderException(
                 $this->getName(),

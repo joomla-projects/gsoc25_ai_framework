@@ -16,9 +16,9 @@ class ChatTest extends TestCase
 {
     public function testChatReturnsSuccessfulResponse(): void
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
         $httpClientMock = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $chatResponse = $this->createJsonResponse([
             'id' => 'msg_123',
@@ -132,7 +132,7 @@ class ChatTest extends TestCase
 
     public function testChatThrowsAuthenticationExceptionWhenApiKeyMissing(): void
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
 
         $provider = new AnthropicProvider([], $httpFactoryMock);
 
@@ -197,10 +197,10 @@ class ChatTest extends TestCase
 
     private function createProviderWithResponses(array $responses): AnthropicProvider
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock = $this->createMock(Http::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock = $this->createStub(Http::class);
 
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
 

@@ -317,8 +317,8 @@ class ImageTest extends TestCase
 
     private function createProviderWithResponses(HttpResponse ...$responses): OpenAIProvider
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock = $this->createMock(Http::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock = $this->createStub(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 

@@ -43,8 +43,8 @@ class ChatTest extends TestCase
             ],
         ]);
 
-        $httpFactoryMock  = $this->createMock(HttpFactory::class);
-        $httpClientMock   = $this->createMock(Http::class);
+        $httpFactoryMock  = $this->createStub(HttpFactory::class);
+        $httpClientMock   = $this->createStub(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
@@ -70,9 +70,9 @@ class ChatTest extends TestCase
     {
         // Test 2: Test chat method raises ProviderException on server error
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -100,9 +100,9 @@ class ChatTest extends TestCase
     {
         // Test 3: Test chat method raises AuthenticationException on unauthorized access
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -131,9 +131,9 @@ class ChatTest extends TestCase
     {
         // Test 4: Test chat method raises RateLimitException on too many requests
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -161,9 +161,9 @@ class ChatTest extends TestCase
     {
         // Test 5: Test chat method raises UnserializableResponseException on invalid JSON
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -185,9 +185,9 @@ class ChatTest extends TestCase
 
     public function testChatRaisesUnserializableResponseWhenChoicesMissing()
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -242,9 +242,9 @@ class ChatTest extends TestCase
             ],
         ]);
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $chatResponse);
 
         $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
