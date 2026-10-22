@@ -16,7 +16,7 @@ The Ollama Provider ([`OllamaProvider`](../../src/Provider/OllamaProvider.php)) 
 ```php
 use Joomla\AI\AIFactory;
 
-$ollama = AIFactory::getAI('ollama', [
+$ollama = (new AIFactory())->getAI('ollama', [
     'base_url' => 'http://localhost:11434', // Default Ollama server
     'model' => 'llama3' // Optional: default model
 ]);

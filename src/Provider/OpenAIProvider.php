@@ -1033,7 +1033,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $payload = [
             'model' => $model,
-            'image' => file_get_contents($imagePath)
+            'image' => file_get_contents($imagePath),
+            '_image_filenames' => [basename($imagePath)]
         ];
 
         if (isset($options['n'])) {
@@ -1095,6 +1096,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if (is_string($images)) {
             // Single image
             $payload['image'] = file_get_contents($images);
+            $payload['_image_filenames'] = [basename($images)];
         } else {
             // Multiple images for gpt-image-1 model
             if ($model !== 'gpt-image-1') {
@@ -1107,6 +1109,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                     throw InvalidArgumentException::fileNotFound($imagePath, 'openai');
                 }
                 $imageArray[] = file_get_contents($imagePath);
+                $payload['_image_filenames'][] = basename($imagePath);
             }
             $payload['image'] = $imageArray;
         }
@@ -1115,6 +1118,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if (isset($options['mask'])) {
             $this->validateMaskFile($options['mask']);
             $payload['mask'] = file_get_contents($options['mask']);
+            $payload['_mask_filename'] = basename($options['mask']);
         }
 
         if (isset($options['n'])) {

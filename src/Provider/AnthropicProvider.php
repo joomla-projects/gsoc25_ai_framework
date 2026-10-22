@@ -14,6 +14,7 @@ use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
@@ -23,7 +24,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface
+class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface
 {
     /**
      * Default model used when none is configured
@@ -155,10 +156,38 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     public function getAvailableModels(): array
     {
         $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest($this->getModelsEndpoint(), $headers);
+        // The Models API pages at 20 by default
+        $response = $this->makeGetRequest($this->getModelsEndpoint() . '?limit=1000', $headers);
         $data = $this->parseJsonResponse($response->getBody());
 
         return array_column($data['data'], 'id');
+    }
+
+    /**
+     * Check if a model supports a capability.
+     *
+     * Uses the "models" entry of the capabilities option when set for that capability;
+     * otherwise every model returned by the Models API supports chat and vision.
+     *
+     * @param   string  $model       The model ID
+     * @param   string  $capability  The capability (chat, vision)
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isModelCapable(string $model, string $capability): bool
+    {
+        $listed = $this->getCapability('models', $capability);
+
+        if ($listed !== null) {
+            return in_array($model, (array) $listed, true);
+        }
+
+        if (!in_array($capability, ['chat', 'vision'], true)) {
+            return false;
+        }
+
+        return in_array($model, $this->getAvailableModels(), true);
     }
 
     /**

@@ -71,8 +71,8 @@ All exceptions inherit from [`AIException`](../src/Exception/AIException.php):
 ### Provider Abstraction
 ```php
 // Same interface, different providers
-$openai = AIFactory::getAI('openai', ['api_key' => $key]);
-$anthropic = AIFactory::getAI('anthropic', ['api_key' => $anthropic_key]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => $key]);
+$anthropic = (new AIFactory())->getAI('anthropic', ['api_key' => $anthropic_key]);
 
 // Identical usage
 $response1 = $openai->chat("Hello!");

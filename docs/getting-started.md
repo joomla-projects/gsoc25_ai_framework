@@ -62,7 +62,7 @@ require_once 'vendor/autoload.php';
 use Joomla\AI\AIFactory;
 
 // Create provider instance
-$openai = AIFactory::getAI('openai', [
+$openai = (new AIFactory())->getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY')
 ]);
 
@@ -85,9 +85,9 @@ use Joomla\AI\AIFactory;
 
 // Configure multiple providers
 $providers = [
-    'openai' => $openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]),
-    'anthropic' => nAIFactory::getAI('anthropic', ['api_key' => getenv('ANTHROPIC_API_KEY')]),
-    'ollama' => AIFactory::getAI('ollama', []) // Local server, no API key needed
+    'openai' => $openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]),
+    'anthropic' => (new AIFactory())->getAI('anthropic', ['api_key' => getenv('ANTHROPIC_API_KEY')]),
+    'ollama' => (new AIFactory())->getAI('ollama', []) // Local server, no API key needed
 ];
 
 $question = "What is Joomla?";
@@ -110,7 +110,7 @@ foreach ($providers as $name => $provider) {
 ```php
 use Joomla\AI\AIFactory;
 
-$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Generate an image
 $image = $openai->generateImage("A beautiful sunset over mountains", [
@@ -153,7 +153,7 @@ echo "Vision analysis: " . $vision->getContent() . "\n";
 Avoid repeating model names by setting defaults:
 
 ```php
-$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Set a default model for all chat requests
 $openai->setDefaultModel('gpt-4o-mini');
@@ -212,7 +212,7 @@ For local AI without API costs:
 ```php
 use Joomla\AI\AIFactory;
 
-$ollama = AIFactory::getAI('ollama');
+$ollama = (new AIFactory())->getAI('ollama');
 
 $response = $ollama->chat("Hello!", ['model' => 'llama3']);
 echo $response->getContent();

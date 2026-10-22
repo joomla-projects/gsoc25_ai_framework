@@ -45,7 +45,7 @@ Each provider is instantiated with its configuration (API key, defaults such as 
 ```php
 use Joomla\AI\AIFactory;
 
-$openai = AIFactory::getAI('openai', [
+$openai = (new AIFactory())->getAI('openai', [
   'api_key' => getenv('OPENAI_API_KEY'),
   // Optional defaults:
   // 'model' => 'gpt-4o',
@@ -57,7 +57,7 @@ $openai = AIFactory::getAI('openai', [
 ```php
 use Joomla\AI\AIFactory;
 
-$anthropic = AIFactory::getAI('anthropic', [
+$anthropic = (new AIFactory())->getAI('anthropic', [
   'api_key' => getenv('ANTHROPIC_API_KEY'),
   // 'model' => 'claude-3-5-sonnet',
 ]);
@@ -67,10 +67,24 @@ $anthropic = AIFactory::getAI('anthropic', [
 ```php
 use Joomla\AI\AIFactory;
 
-$ollama = AIFactory::getAI('ollama', [
+$ollama = (new AIFactory())->getAI('ollama', [
   // 'base_url' => 'http://localhost:11434',
   // 'model' => 'llama3',
 ]);
+```
+
+### Custom providers and DI
+`AIFactory` is a regular service: inject an `HttpFactory` and register extra providers (any class extending `AbstractProvider`), or pass a provider class name straight to `getAI()`.
+
+```php
+use Joomla\AI\AIFactory;
+use Joomla\Http\HttpFactory;
+
+$factory = new AIFactory(new HttpFactory());
+$factory->registerProvider('mistral', MistralProvider::class);
+
+$mistral = $factory->getAI('mistral', ['api_key' => $key]);
+$custom  = $factory->getAI(MyProvider::class, []);
 ```
 
 ## Supported Methods

@@ -23,7 +23,7 @@ The OpenAI Provider ([`OpenAIProvider`](../../src/Provider/OpenAIProvider.php)) 
 ```php
 use Joomla\AI\AIFactory;
 
-$openai = AIFactory::getAI('openai', [
+$openai = (new AIFactory())->getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY'), // Required: the key is only read from this option
     'base_url' => 'https://api.openai.com/v1', // Optional: custom endpoint
     'model' => 'gpt-4o-mini', // Optional: default model
@@ -344,7 +344,7 @@ try {
 The model lists and limits below live in one capability map (`OpenAIProvider::getDefaultCapabilities()`). To allow a new model or change a limit without waiting for a release, pass a `capabilities` option. Keyed maps (per-model limits, the `models` map) are merged, lists and scalars are replaced. Size, quality, prompt-length and file-size checks are skipped for models with no entry.
 
 ```php
-$openai = AIFactory::getAI('openai', [
+$openai = (new AIFactory())->getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY'),
     'capabilities' => [
         'models' => [

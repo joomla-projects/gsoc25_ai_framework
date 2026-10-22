@@ -14,30 +14,86 @@ use Joomla\AI\Provider\AnthropicProvider;
 use Joomla\AI\Provider\OllamaProvider;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\Http\HttpFactory;
 
 /**
- * AI Factory class for creating AI instances
+ * AI Factory class for creating AI instances.
+ *
+ * Instantiable so it can be registered in a DI container. Custom providers can be
+ * added with registerProvider() or passed directly as a class name to getAI().
  *
  * @since  __DEPLOY_VERSION__
  */
 class AIFactory
 {
     /**
-     * Available AI providers
+     * Built-in AI providers
      *
      * @var array
      * @since  __DEPLOY_VERSION__
      */
-    private const PROVIDERS = [
+    private const DEFAULT_PROVIDERS = [
         'openai' => OpenAIProvider::class,
         'anthropic' => AnthropicProvider::class,
         'ollama' => OllamaProvider::class,
     ];
 
     /**
+     * Registered providers, name => class name
+     *
+     * @var array
+     * @since  __DEPLOY_VERSION__
+     */
+    private array $providers;
+
+    /**
+     * HTTP factory passed to every provider created by this factory
+     *
+     * @var HttpFactory|null
+     * @since  __DEPLOY_VERSION__
+     */
+    private ?HttpFactory $httpFactory;
+
+    /**
+     * Constructor.
+     *
+     * @param   HttpFactory|null  $httpFactory  HTTP factory to pass to providers
+     * @param   array             $providers    Additional providers, name => class name
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function __construct(?HttpFactory $httpFactory = null, array $providers = [])
+    {
+        $this->httpFactory = $httpFactory;
+        $this->providers = self::DEFAULT_PROVIDERS;
+
+        foreach ($providers as $name => $class) {
+            $this->registerProvider($name, $class);
+        }
+    }
+
+    /**
+     * Register a provider under a name, or replace a built-in one.
+     *
+     * @param   string  $name   The provider name
+     * @param   string  $class  Class name extending AbstractProvider
+     *
+     * @return  $this
+     * @throws  InvalidArgumentException  If the class is not a provider
+     * @since   __DEPLOY_VERSION__
+     */
+    public function registerProvider(string $name, string $class): static
+    {
+        $this->assertProviderClass($class);
+        $this->providers[strtolower($name)] = $class;
+
+        return $this;
+    }
+
+    /**
      * Create an AI instance with the specified provider
      *
-     * @param   string  $provider  The provider name (openai, anthropic, ollama)
+     * @param   string  $provider  A registered provider name or a provider class name
      * @param   array   $options   Provider configuration options
      *
      * @return  AI
@@ -45,27 +101,30 @@ class AIFactory
      * @throws  ProviderException
      * @since   __DEPLOY_VERSION__
      */
-    public static function getAI(string $provider, array $options = []): AI
+    public function getAI(string $provider, array $options = []): AI
     {
-        $provider = strtolower($provider);
+        $providerClass = $this->providers[strtolower($provider)] ?? null;
 
-        if (!isset(self::PROVIDERS[$provider])) {
+        if ($providerClass === null && class_exists($provider)) {
+            $this->assertProviderClass($provider);
+            $providerClass = $provider;
+        }
+
+        if ($providerClass === null) {
             throw new ProviderException(
                 $provider,
                 [
-                    'message' => 'Unknown AI provider: ' . $provider . '. Available providers: ' . implode(', ', array_keys(self::PROVIDERS)),
+                    'message' => 'Unknown AI provider: ' . $provider . '. Available providers: ' . implode(', ', $this->getAvailableProviders()),
                     'requested_provider' => $provider,
-                    'available_providers' => array_keys(self::PROVIDERS)
+                    'available_providers' => $this->getAvailableProviders()
                 ],
                 null,
                 'INVALID_PROVIDER'
             );
         }
 
-        $providerClass = self::PROVIDERS[$provider];
-
         try {
-            $providerInstance = new $providerClass($options);
+            $providerInstance = new $providerClass($options, $this->httpFactory);
             return new AI($providerInstance);
         } catch (\Exception $e) {
             throw new ProviderException(
@@ -87,9 +146,9 @@ class AIFactory
      * @return  array
      * @since   __DEPLOY_VERSION__
      */
-    public static function getAvailableProviders(): array
+    public function getAvailableProviders(): array
     {
-        return array_keys(self::PROVIDERS);
+        return array_keys($this->providers);
     }
 
     /**
@@ -100,8 +159,23 @@ class AIFactory
      * @return  bool
      * @since   __DEPLOY_VERSION__
      */
-    public static function isProviderAvailable(string $provider): bool
+    public function isProviderAvailable(string $provider): bool
     {
-        return isset(self::PROVIDERS[strtolower($provider)]);
+        return isset($this->providers[strtolower($provider)]);
+    }
+
+    /**
+     * Ensure a class name is a usable provider.
+     *
+     * @param   string  $class  The class name
+     *
+     * @throws  InvalidArgumentException
+     * @since   __DEPLOY_VERSION__
+     */
+    private function assertProviderClass(string $class): void
+    {
+        if (!class_exists($class) || !is_subclass_of($class, AbstractProvider::class)) {
+            throw InvalidArgumentException::invalidParameter('provider', $class, 'factory', 'Provider class must exist and extend ' . AbstractProvider::class . '.');
+        }
     }
 }

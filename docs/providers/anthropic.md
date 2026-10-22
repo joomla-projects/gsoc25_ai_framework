@@ -15,7 +15,7 @@ The Anthropic Provider ([`AnthropicProvider`](../../src/Provider/AnthropicProvid
 ```php
 use Joomla\AI\AIFactory;
 
-$anthropic = AIFactory::getAI('anthropic', [
+$anthropic = (new AIFactory())->getAI('anthropic', [
     'api_key' => getenv('ANTHROPIC_API_KEY'), // Required: the key is only read from this option
     'model' => 'claude-3-5-sonnet', // Optional: default model
     'timeout' => 60, // Optional: request timeout in seconds

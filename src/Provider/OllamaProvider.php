@@ -6,6 +6,8 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
@@ -15,7 +17,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OllamaProvider extends AbstractProvider implements ProviderInterface
+class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface, EmbeddingInterface
 {
     /**
      * Custom base URL for API requests
@@ -146,6 +148,28 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     private function getGenerateEndpoint(): string
     {
         return $this->baseUrl . '/api/generate';
+    }
+
+    /**
+     * Get the embed endpoint URL
+     *
+     * @return  string  The endpoint URL
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getEmbedEndpoint(): string
+    {
+        return $this->baseUrl . '/api/embed';
+    }
+
+    /**
+     * Get the show model endpoint URL
+     *
+     * @return  string  The endpoint URL
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getShowEndpoint(): string
+    {
+        return $this->baseUrl . '/api/show';
     }
 
     /**
@@ -454,12 +478,16 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
                 throw InvalidArgumentException::invalidMessages('ollama', 'Messages must be a non-empty array.');
             }
         } else {
-            $messages = $options['messages'] ?? [
-                [
-                    'role' => 'user',
-                    'content' => $message
-                ]
+            $userMessage = [
+                'role' => 'user',
+                'content' => $message
             ];
+
+            if (!empty($options['images'])) {
+                $userMessage['images'] = $this->normaliseImages((array) $options['images']);
+            }
+
+            $messages = [$userMessage];
         }
 
         $payload = [
@@ -513,6 +541,131 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Send a message with an image to a multimodal Ollama model (e.g. llava, llama3.2-vision).
+     *
+     * @param   string  $message  The question about the image
+     * @param   string  $image    Base64 data URI or raw base64 image data
+     * @param   array   $options  Additional options (same as chat())
+     *
+     * @return  Response  The AI response
+     * @throws  InvalidArgumentException  If the image is not base64 data
+     * @since   __DEPLOY_VERSION__
+     */
+    public function vision(string $message, string $image, array $options = []): Response
+    {
+        $options['images'] = [$image];
+
+        return $this->chat($message, $options);
+    }
+
+    /**
+     * Create embeddings using the Ollama /api/embed endpoint.
+     *
+     * @param   string|array  $input    Text or list of texts to embed
+     * @param   string        $model    The embedding model (e.g. nomic-embed-text)
+     * @param   array         $options  Optional: truncate, dimensions, keep_alive, options
+     *
+     * @return  Response  Embedding vector (single input) or list of vectors as JSON
+     * @throws  ProviderException  If the request fails
+     * @since   __DEPLOY_VERSION__
+     */
+    public function createEmbeddings($input, string $model, array $options = []): Response
+    {
+        $this->validateConnection();
+        $this->ensureModelAvailable($model);
+
+        $payload = [
+            'model' => $model,
+            'input' => $input
+        ];
+
+        foreach (['truncate', 'dimensions', 'keep_alive', 'options'] as $key) {
+            if (isset($options[$key])) {
+                $payload[$key] = $options[$key];
+            }
+        }
+
+        $jsonData = json_encode($payload);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => 'Failed to encode embed request: ' . json_last_error_msg()]
+            );
+        }
+
+        $httpResponse = $this->makePostRequest($this->getEmbedEndpoint(), $jsonData);
+        $data = $this->parseJsonResponse($httpResponse->getBody());
+
+        if (isset($data['error'])) {
+            throw new ProviderException($this->getName(), $data);
+        }
+
+        $embeddings = $data['embeddings'] ?? [];
+        $content = json_encode(is_array($input) ? $embeddings : ($embeddings[0] ?? []));
+
+        $metadata = [
+            'model' => $data['model'] ?? $model,
+            'embedding_count' => count($embeddings),
+            'input_type' => is_array($input) ? 'array' : 'string',
+            'total_duration' => $data['total_duration'] ?? 0,
+            'load_duration' => $data['load_duration'] ?? 0,
+            'prompt_eval_count' => $data['prompt_eval_count'] ?? 0
+        ] + $this->normaliseUsage($data['prompt_eval_count'] ?? null, null);
+
+        return new Response($content, $this->getName(), $metadata, 200);
+    }
+
+    /**
+     * Get locally available models that report the "embedding" capability.
+     *
+     * @return  array  Model names
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getEmbeddingModels(): array
+    {
+        $models = [];
+
+        foreach ($this->getAvailableModels() as $model) {
+            $response = $this->makePostRequest($this->getShowEndpoint(), json_encode(['model' => $model]));
+            $data = $this->parseJsonResponse($response->getBody());
+
+            if (in_array('embedding', $data['capabilities'] ?? [], true)) {
+                $models[] = $model;
+            }
+        }
+
+        return $models;
+    }
+
+    /**
+     * Convert images to the raw base64 strings Ollama expects.
+     *
+     * @param   array  $images  Base64 data URIs or raw base64 strings
+     *
+     * @return  array
+     * @throws  InvalidArgumentException  If an image is not base64 data
+     * @since   __DEPLOY_VERSION__
+     */
+    private function normaliseImages(array $images): array
+    {
+        $normalised = [];
+
+        foreach ($images as $image) {
+            if (is_string($image) && preg_match('/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s', $image, $matches)) {
+                $image = $matches[1];
+            }
+
+            if (!is_string($image) || $image === '' || base64_decode($image, true) === false) {
+                throw InvalidArgumentException::invalidParameter('image', $image, 'ollama', 'Images must be base64 data URIs or raw base64 strings. URLs and file paths are not supported.');
+            }
+
+            $normalised[] = $image;
+        }
+
+        return $normalised;
+    }
+
+    /**
      * Build the request payload for the generate endpoint
      *
      * @param   string  $prompt   The prompt to generate a response for
@@ -543,8 +696,8 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
             $payload['suffix'] = $options['suffix'];
         }
 
-        if (isset($options['images']) && is_array($options['images'])) {
-            $payload['images'] = $options['images'];
+        if (!empty($options['images'])) {
+            $payload['images'] = $this->normaliseImages((array) $options['images']);
         }
 
         if (isset($options['format'])) {

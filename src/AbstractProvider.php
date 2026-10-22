@@ -11,6 +11,7 @@ namespace Joomla\AI;
 
 use Joomla\Http\HttpFactory;
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
 use Joomla\AI\Exception\QuotaExceededException;
@@ -240,7 +241,7 @@ abstract class AbstractProvider implements ProviderInterface
 
         foreach ($data as $key => $value) {
             // Handle metadata fields
-            if (in_array($key, ['_filename', '_filepath'])) {
+            if (in_array($key, ['_filename', '_filepath', '_image_filenames', '_mask_filename'])) {
                 continue;
             }
 
@@ -264,27 +265,20 @@ abstract class AbstractProvider implements ProviderInterface
 
                 $postData .= $fileContent . "\r\n";
             } elseif ($key === 'image') {
-                // To do: Currently strict format
-                if (is_array($value)) {
-                    foreach ($value as $index => $imageData) {
-                        $postData .= "--{$boundary}\r\n";
-                        $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image{$index}.png\"\r\n";
-                        $postData .= "Content-Type: image/png\r\n\r\n";
-                        $postData .= $imageData . "\r\n";
-                    }
-                } else {
-                    // Single image
-                    $postData .= "--{$boundary}\r\n";
-                    $postData .= "Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n";
-                    $postData .= "Content-Type: image/png\r\n\r\n";
-                    $postData .= $value . "\r\n";
+                // Multiple images are sent as image[]; MIME type comes from the file contents
+                $images = is_array($value) ? array_values($value) : [$value];
+                $fieldName = is_array($value) ? 'image[]' : 'image';
+                $filenames = array_values((array) ($data['_image_filenames'] ?? []));
+
+                foreach ($images as $index => $imageData) {
+                    $mimeType = $this->detectImageMimeType($imageData);
+                    $filename = $filenames[$index] ?? 'image' . ($index ?: '') . '.' . $this->getExtensionFromMimeType($mimeType);
+                    $postData .= $this->buildMultipartFilePart($boundary, $fieldName, $filename, $mimeType, $imageData);
                 }
             } elseif ($key === 'mask') {
-                // Handle mask file
-                $postData .= "--{$boundary}\r\n";
-                $postData .= "Content-Disposition: form-data; name=\"mask\"; filename=\"mask.png\"\r\n";
-                $postData .= "Content-Type: image/png\r\n\r\n";
-                $postData .= $value . "\r\n";
+                $mimeType = $this->detectImageMimeType($value);
+                $filename = $data['_mask_filename'] ?? 'mask.' . $this->getExtensionFromMimeType($mimeType);
+                $postData .= $this->buildMultipartFilePart($boundary, 'mask', $filename, $mimeType, $value);
             } else {
                 // Handle regular form fields
                 $postData .= "--{$boundary}\r\n";
@@ -297,6 +291,28 @@ abstract class AbstractProvider implements ProviderInterface
         $headers['Content-Type'] = "multipart/form-data; boundary={$boundary}";
 
         return $this->makePostRequest($url, $postData, $headers);
+    }
+
+    /**
+     * Build one file part of a multipart body.
+     *
+     * @param   string  $boundary   The multipart boundary
+     * @param   string  $fieldName  The form field name
+     * @param   string  $filename   The file name sent to the API
+     * @param   string  $mimeType   The file MIME type
+     * @param   string  $content    The file contents
+     *
+     * @return  string
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildMultipartFilePart(string $boundary, string $fieldName, string $filename, string $mimeType, string $content): string
+    {
+        $filename = str_replace(['"', "\r", "\n"], '', $filename);
+
+        return "--{$boundary}\r\n"
+            . "Content-Disposition: form-data; name=\"{$fieldName}\"; filename=\"{$filename}\"\r\n"
+            . "Content-Type: {$mimeType}\r\n\r\n"
+            . $content . "\r\n";
     }
 
     /**
@@ -365,19 +381,16 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
-     * Get audio MIME type from the input.
+     * Get audio MIME type from a format name or file path.
      *
-     * @param   string  $input
+     * @param   string  $input  Format name (e.g. "mp3") or file path
      *
      * @return  string  The MIME type
+     * @throws  InvalidArgumentException  If the extension is not a known audio format
      * @since   __DEPLOY_VERSION__
      */
     protected function detectAudioMimeType(string $input): string
     {
-        if (strpos($input, '.') !== false && !in_array($input, ['mp3', 'wav', 'flac', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'webm', 'opus', 'aac', 'pcm'])) {
-            $input = strtolower(pathinfo($input, PATHINFO_EXTENSION));
-        }
-
         $mimeMap = [
             'mp3' => 'audio/mpeg',
             'wav' => 'audio/wav',
@@ -393,7 +406,14 @@ abstract class AbstractProvider implements ProviderInterface
             'pcm' => 'audio/pcm',
         ];
 
-        return $mimeMap[$input];
+        // Accept a format name ("mp3") or a file path ("speech.mp3")
+        $extension = isset($mimeMap[strtolower($input)]) ? strtolower($input) : strtolower(pathinfo($input, PATHINFO_EXTENSION));
+
+        if (!isset($mimeMap[$extension])) {
+            throw InvalidArgumentException::invalidFileFormat($input, $extension, array_keys($mimeMap), $this->getName());
+        }
+
+        return $mimeMap[$extension];
     }
 
     /**
