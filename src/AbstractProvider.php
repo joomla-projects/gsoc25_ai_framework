@@ -486,6 +486,7 @@ abstract class AbstractProvider implements ProviderInterface
 
     /**
      * Apply moderation to the input if the provider implements ModerationInterface.
+     * Can be disabled with the "moderate_input" provider option.
      *
      * @param   string|array  $input    The input to moderate (text or images)
      * @param   array         $options  Additional options for moderation
@@ -495,8 +496,8 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function moderateInput($input, array $options = []): bool
     {
-        // Check if the provider supports moderation
-        if (!($this instanceof ModerationInterface)) {
+        // Check if the provider supports moderation and it is enabled
+        if (!($this instanceof ModerationInterface) || !$this->getOption('moderate_input', true)) {
             return false;
         }
 

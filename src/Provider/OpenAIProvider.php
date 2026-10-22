@@ -10,6 +10,7 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
@@ -269,7 +270,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getAvailableModels(): array
     {
         $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest('https://api.openai.com/v1/models', $headers);
+        $response = $this->makeGetRequest($this->baseUrl . '/models', $headers);
         $data = $this->parseJsonResponse($response->getBody());
 
         return array_column($data['data'], 'id');
@@ -429,7 +430,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($message, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildChatRequestPayload($message, $options);
@@ -467,7 +468,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($multiModalInput, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildVisionRequestPayload($message, $image, 'vision', $options);
@@ -499,7 +500,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($prompt, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildImageRequestPayload($prompt, $options);
@@ -555,7 +556,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($prompt, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildImageEditPayload($images, $prompt, $options);
@@ -586,7 +587,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($text, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildSpeechPayload($text, $options);
@@ -662,7 +663,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $isBlocked = $this->moderateInput($input, []);
 
         if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
 
         $payload = $this->buildEmbeddingPayload($input, $model, $options);

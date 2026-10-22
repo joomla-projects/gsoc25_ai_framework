@@ -48,14 +48,15 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     /**
      * Check if Ollama provider is supported/configured.
      *
+     * @param   string  $baseUrl  The Ollama server base URL
+     *
      * @return  boolean  True if Ollama server is accessible
      * @since  __DEPLOY_VERSION__
      */
-    public static function isSupported(): bool
+    public static function isSupported(string $baseUrl = 'http://localhost:11434'): bool
     {
-        // We'll implement a check to see if Ollama server is running
         try {
-            $response = file_get_contents('http://localhost:11434/api/tags');
+            $response = @file_get_contents(rtrim($baseUrl, '/') . '/api/tags');
             return $response !== false;
         } catch (\Exception $e) {
             return false;

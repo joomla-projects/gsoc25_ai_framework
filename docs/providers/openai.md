@@ -377,7 +377,13 @@ The framework automatically applies moderation to:
 - TTS text input
 - Image editing prompts
 
-Content flagged by moderation will throw an exception before the API call.
+Content flagged by moderation will throw an `AIException` before the API call.
+
+To skip automatic moderation, set the `moderate_input` provider option to `false`:
+
+```php
+$openai = new OpenAIProvider(['api_key' => $apiKey, 'moderate_input' => false]);
+```
 
 ## Best Practices
 
