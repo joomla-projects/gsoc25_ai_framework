@@ -73,6 +73,31 @@ $ollama = (new AIFactory())->getAI('ollama', [
 ]);
 ```
 
+### Streaming
+OpenAI, Anthropic and Ollama stream chat responses as they are generated. Use the generator, which yields text deltas and returns the final `Response`:
+
+```php
+$stream = $anthropic->chatStream('Write a haiku about Joomla');
+
+foreach ($stream as $delta) {
+    echo $delta;
+    flush();
+}
+
+$response = $stream->getReturn(); // full text, getUsage(), getFinishReason()
+```
+
+Or pass a callback to `chat()`:
+
+```php
+$response = $openai->chat('Write a haiku about Joomla', [
+    'stream'   => true,
+    'on_chunk' => fn (string $delta) => print($delta),
+]);
+```
+
+Ollama also has `generateStream()`, and `generate()` accepts the same `stream` / `on_chunk` options. Streaming uses cURL directly (`Joomla\Http` buffers whole responses); the `timeout` and `http_options` options still apply, and a custom `Joomla\AI\Http\StreamTransportInterface` can be passed as `stream_transport`.
+
 ### Custom providers and DI
 `AIFactory` is a regular service: inject an `HttpFactory` and register extra providers (any class extending `AbstractProvider`), or pass a provider class name straight to `getAI()`.
 

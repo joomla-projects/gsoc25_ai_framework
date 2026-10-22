@@ -22,6 +22,7 @@ use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ModerationInterface;
+use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -30,7 +31,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface
+class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface, StreamInterface
 {
     /**
      * Custom base URL for API requests
@@ -438,6 +439,10 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function chat(string $message, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
         // Apply moderation to the chat message
         $isBlocked = $this->moderateInput($message, []);
 
@@ -458,6 +463,82 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         );
 
         return $this->parseOpenAIResponse($httpResponse->getBody());
+    }
+
+    /**
+     * Stream a chat completion. Yields text deltas; getReturn() gives the final Response.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        if ($this->moderateInput($message, [])) {
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
+        }
+
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+        $payload['stream_options'] = ['include_usage' => true];
+
+        $chunks = $this->makeStreamingPostRequest($this->getChatEndpoint(), json_encode($payload), $this->buildHeaders());
+
+        $content = '';
+        $finishReason = null;
+        $usage = [];
+        $model = $payload['model'];
+        $id = null;
+
+        foreach ($this->readServerSentEvents($chunks) as $event) {
+            if ($event['data'] === '[DONE]') {
+                break;
+            }
+
+            $data = $this->decodeStreamEvent($event['data']);
+
+            if (isset($data['error'])) {
+                throw new ProviderException($this->getName(), $data);
+            }
+
+            $model = $data['model'] ?? $model;
+            $id = $data['id'] ?? $id;
+
+            if (is_array($data['usage'] ?? null)) {
+                $usage = $data['usage'];
+            }
+
+            $choice = $data['choices'][0] ?? null;
+            if (!is_array($choice)) {
+                continue;
+            }
+
+            $finishReason = $choice['finish_reason'] ?? $finishReason;
+            $delta = $choice['delta']['content'] ?? null;
+
+            if (is_string($delta) && $delta !== '') {
+                $content .= $delta;
+
+                yield $delta;
+            }
+        }
+
+        $metadata = [
+            'model' => $model,
+            'id' => $id,
+            'usage' => $usage,
+            'finish_reason' => $finishReason,
+            'stream' => true,
+        ] + $this->normaliseOpenAIUsage($usage);
+
+        return new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            $this->determineAIStatusCode(['choices' => [['finish_reason' => $finishReason]]])
+        );
     }
 
     /**

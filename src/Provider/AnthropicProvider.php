@@ -16,6 +16,7 @@ use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ProviderInterface;
+use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -24,7 +25,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface
+class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, StreamInterface
 {
     /**
      * Default model used when none is configured
@@ -336,6 +337,10 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     public function chat(string $message, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
         $payload = $this->buildChatRequestPayload($message, $options);
 
         $headers = $this->buildHeaders();
@@ -347,6 +352,74 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
         );
 
         return $this->parseAnthropicResponse($httpResponse->getBody());
+    }
+
+    /**
+     * Stream a chat message. Yields text deltas; getReturn() gives the final Response.
+     * Thinking deltas are not yielded.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+
+        $chunks = $this->makeStreamingPostRequest($this->getMessagesEndpoint(), json_encode($payload), $this->buildHeaders());
+
+        $content = '';
+        $message = ['id' => null, 'model' => $payload['model'], 'role' => 'assistant', 'type' => 'message'];
+        $usage = [];
+        $stopReason = null;
+        $stopSequence = null;
+
+        foreach ($this->readServerSentEvents($chunks) as $event) {
+            $data = $this->decodeStreamEvent($event['data']);
+            $type = $data['type'] ?? $event['event'];
+
+            switch ($type) {
+                case 'error':
+                    throw new ProviderException($this->getName(), $data);
+
+                case 'message_start':
+                    if (is_array($data['message'] ?? null)) {
+                        $message = array_intersect_key($data['message'], $message) + $message;
+                        $usage = is_array($data['message']['usage'] ?? null) ? $data['message']['usage'] : $usage;
+                    }
+                    break;
+
+                case 'content_block_delta':
+                    if (($data['delta']['type'] ?? null) === 'text_delta' && is_string($data['delta']['text'] ?? null)) {
+                        $content .= $data['delta']['text'];
+
+                        yield $data['delta']['text'];
+                    }
+                    break;
+
+                case 'message_delta':
+                    $stopReason = $data['delta']['stop_reason'] ?? $stopReason;
+                    $stopSequence = $data['delta']['stop_sequence'] ?? $stopSequence;
+
+                    if (is_array($data['usage'] ?? null)) {
+                        $usage = array_replace($usage, $data['usage']);
+                    }
+                    break;
+            }
+        }
+
+        $metadata = $message + [
+            'usage' => $usage,
+            'finish_reason' => $this->normaliseFinishReason($stopReason),
+            'stop_reason' => $stopReason,
+            'stop_sequence' => $stopSequence,
+            'stream' => true,
+        ] + $this->normaliseUsage($usage['input_tokens'] ?? null, $usage['output_tokens'] ?? null);
+
+        return new Response($content, $this->getName(), $metadata, $this->determineAIStatusCode(['stop_reason' => $stopReason]));
     }
 
     /**

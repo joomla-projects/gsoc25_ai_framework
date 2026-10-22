@@ -18,6 +18,9 @@ use Joomla\AI\Exception\QuotaExceededException;
 use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\ModerationInterface;
+use Joomla\AI\Http\CurlStreamTransport;
+use Joomla\AI\Http\StreamTransportInterface;
+use Joomla\AI\Response\Response;
 
 /**
  * Abstract provider class.
@@ -143,6 +146,167 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         return $this->httpFactory->getHttp($httpOptions);
+    }
+
+    /**
+     * Get the transport used for streaming requests.
+     * A StreamTransportInterface instance can be passed in the "stream_transport" option.
+     *
+     * @return  StreamTransportInterface
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getStreamTransport(): StreamTransportInterface
+    {
+        $transport = $this->getOption('stream_transport');
+
+        if ($transport instanceof StreamTransportInterface) {
+            return $transport;
+        }
+
+        $options = (array) $this->getOption('http_options', []);
+
+        if ($this->getOption('timeout') !== null) {
+            $options['timeout'] = (int) $this->getOption('timeout');
+        }
+
+        return new CurlStreamTransport($options);
+    }
+
+    /**
+     * Make a streaming POST request and yield the raw response body chunks.
+     *
+     * @param   string  $url      API endpoint URL
+     * @param   string  $data     Request body
+     * @param   array   $headers  HTTP headers
+     *
+     * @return  \Generator<int, string>
+     * @throws  AuthenticationException|RateLimitException|QuotaExceededException|ProviderException  On HTTP errors
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function makeStreamingPostRequest(string $url, string $data, array $headers = []): \Generator
+    {
+        $stream = $this->getStreamTransport()->stream('POST', $url, $data, $headers);
+
+        yield from $stream;
+
+        $this->validateResponse($stream->getReturn());
+    }
+
+    /**
+     * Split a stream of raw chunks into complete lines (newline-delimited JSON).
+     *
+     * @param   iterable  $chunks  Raw body chunks
+     *
+     * @return  \Generator<int, string>  Non-empty lines without the line ending
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function readLines(iterable $chunks): \Generator
+    {
+        $buffer = '';
+
+        foreach ($chunks as $chunk) {
+            $buffer .= $chunk;
+
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = rtrim(substr($buffer, 0, $pos), "\r");
+                $buffer = substr($buffer, $pos + 1);
+
+                if ($line !== '') {
+                    yield $line;
+                }
+            }
+        }
+
+        if (trim($buffer) !== '') {
+            yield rtrim($buffer, "\r");
+        }
+    }
+
+    /**
+     * Parse a stream of raw chunks as server-sent events.
+     *
+     * @param   iterable  $chunks  Raw body chunks
+     *
+     * @return  \Generator<int, array{event: string|null, data: string}>
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function readServerSentEvents(iterable $chunks): \Generator
+    {
+        $event = null;
+        $data = [];
+        $buffer = '';
+
+        foreach ($chunks as $chunk) {
+            $buffer .= $chunk;
+
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = rtrim(substr($buffer, 0, $pos), "\r");
+                $buffer = substr($buffer, $pos + 1);
+
+                if ($line === '') {
+                    // Blank line ends the event
+                    if ($data !== []) {
+                        yield ['event' => $event, 'data' => implode("\n", $data)];
+                    }
+
+                    $event = null;
+                    $data = [];
+                } elseif (str_starts_with($line, 'event:')) {
+                    $event = trim(substr($line, 6));
+                } elseif (str_starts_with($line, 'data:')) {
+                    $data[] = ltrim(substr($line, 5), ' ');
+                }
+                // Comments (":") and other fields are ignored
+            }
+        }
+
+        if (str_starts_with(rtrim($buffer, "\r"), 'data:')) {
+            $data[] = ltrim(substr(rtrim($buffer, "\r"), 5), ' ');
+        }
+
+        if ($data !== []) {
+            yield ['event' => $event, 'data' => implode("\n", $data)];
+        }
+    }
+
+    /**
+     * Decode one JSON event from a stream.
+     *
+     * @param   string  $json  The JSON text
+     *
+     * @return  array
+     * @throws  UnserializableResponseException  If the event is not a JSON object
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function decodeStreamEvent(string $json): array
+    {
+        $decoded = json_decode($json, true);
+
+        if (!is_array($decoded)) {
+            throw new UnserializableResponseException($this->getName(), $json, 'Invalid JSON in stream event: ' . json_last_error_msg());
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Run a chat stream to completion, passing each delta to an optional callback.
+     *
+     * @param   \Generator     $stream   Generator from chatStream()
+     * @param   callable|null  $onChunk  Called with each text delta
+     *
+     * @return  Response  The final response
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function consumeStream(\Generator $stream, ?callable $onChunk = null): Response
+    {
+        foreach ($stream as $delta) {
+            if ($onChunk !== null) {
+                $onChunk($delta);
+            }
+        }
+
+        return $stream->getReturn();
     }
 
     /**

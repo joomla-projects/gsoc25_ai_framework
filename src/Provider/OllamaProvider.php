@@ -10,6 +10,7 @@ use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ProviderInterface;
+use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -18,7 +19,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface, EmbeddingInterface
+class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface, EmbeddingInterface, StreamInterface
 {
     /**
      * Custom base URL for API requests
@@ -517,6 +518,10 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function chat(string $message, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
         $payload = $this->buildChatRequestPayload($message, $options);
 
         $endpoint = $this->getChatEndpoint();
@@ -534,12 +539,24 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $jsonData,
         );
 
-        // Check if this is a streaming response
-        if (isset($payload['stream']) && $payload['stream'] === true) {
-            return $this->parseOllamaStreamingResponse($httpResponse->getBody(), true);
-        }
-
         return $this->parseOllamaResponse($httpResponse->getBody(), true);
+    }
+
+    /**
+     * Stream a chat message. Yields text deltas; getReturn() gives the final Response.
+     *
+     * @param   string  $message  The user message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+
+        return yield from $this->streamOllama($this->getChatEndpoint(), $payload, true);
     }
 
     /**
@@ -747,6 +764,10 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function generate(string $prompt, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->generateStream($prompt, $options), $options['on_chunk'] ?? null);
+        }
+
         $payload = $this->buildGenerateRequestPayload($prompt, $options);
 
         $endpoint = $this->getGenerateEndpoint();
@@ -764,40 +785,46 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $jsonData,
         );
 
-        // Check if this is a streaming response
-        if (isset($payload['stream']) && $payload['stream'] === true) {
-            return $this->parseOllamaStreamingResponse($httpResponse->getBody(), false);
-        }
-
         return $this->parseOllamaResponse($httpResponse->getBody(), false);
     }
 
     /**
-     * Parse a streaming response from Ollama API
+     * Stream a completion. Yields text deltas; getReturn() gives the final Response.
      *
-     * @param   string  $responseBody  The raw response body
-     * @param   bool    $isChat        Whether this is a chat response (true) or generate response (false)
+     * @param   string  $prompt   The prompt to generate a response for
+     * @param   array   $options  The same options as generate()
      *
-     * @return  Response  The parsed response
+     * @return  \Generator<int, string, mixed, Response>
      * @since   __DEPLOY_VERSION__
      */
-    private function parseOllamaStreamingResponse(string $responseBody, bool $isChat = true): Response
+    public function generateStream(string $prompt, array $options = []): \Generator
     {
-        $lines = explode("\n", $responseBody);
+        $payload = $this->buildGenerateRequestPayload($prompt, $options);
+        $payload['stream'] = true;
+
+        return yield from $this->streamOllama($this->getGenerateEndpoint(), $payload, false);
+    }
+
+    /**
+     * Send a streaming request to Ollama and yield text deltas from the NDJSON response.
+     *
+     * @param   string  $endpoint  The chat or generate endpoint
+     * @param   array   $payload   The request payload with stream=true
+     * @param   bool    $isChat    Whether this is a chat (true) or generate (false) stream
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    private function streamOllama(string $endpoint, array $payload, bool $isChat): \Generator
+    {
+        $chunks = $this->makeStreamingPostRequest($endpoint, json_encode($payload), ['Content-Type' => 'application/json']);
+
         $fullContent = '';
         $lastMetadata = [];
         $validChunks = 0;
 
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-
-            $data = json_decode($line, true);
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-                continue;
-            }
+        foreach ($this->readLines($chunks) as $line) {
+            $data = $this->decodeStreamEvent($line);
 
             if (isset($data['error'])) {
                 throw new ProviderException($this->getName(), $data);
@@ -805,11 +832,13 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
 
             $validChunks++;
 
-            // Accumulate content from each chunk - handle both chat and generate formats
-            if ($isChat && isset($data['message']['content'])) {
-                $fullContent .= (string) $data['message']['content'];
-            } elseif (!$isChat && isset($data['response'])) {
-                $fullContent .= (string) $data['response'];
+            // Each line carries a piece of the reply
+            $delta = $isChat ? ($data['message']['content'] ?? null) : ($data['response'] ?? null);
+
+            if (is_string($delta) && $delta !== '') {
+                $fullContent .= $delta;
+
+                yield $delta;
             }
 
             // Keep track of the last metadata
@@ -841,8 +870,10 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         if ($validChunks === 0) {
-            throw new UnserializableResponseException($this->getName(), $responseBody, 'No valid JSON chunks in streaming response');
+            throw new UnserializableResponseException($this->getName(), '', 'No valid JSON chunks in streaming response');
         }
+
+        $lastMetadata['stream'] = true;
 
         $statusCode = isset($lastMetadata['done_reason']) ? $this->determineAIStatusCode($lastMetadata) : 200;
 
