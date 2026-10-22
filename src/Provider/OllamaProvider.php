@@ -164,12 +164,13 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     }
 
     /**
-     * List models currently loaded into memory (running) and echo their names.
+     * List models currently loaded into memory (running).
      *
+     * @return  array  Names of the running models
      * @throws ProviderException If the request fails
      * @since __DEPLOY_VERSION__
      */
-    public function getRunningModels()
+    public function getRunningModels(): array
     {
         $this->validateConnection();
 
@@ -177,16 +178,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
         $response = $this->makeGetRequest($endpoint);
         $data = $this->parseJsonResponse($response->getBody());
 
-        $models = $data['models'] ?? [];
-
-        if (empty($models)) {
-            echo "No models are currently loaded into memory.\n";
-        } else {
-            echo "Running models:\n";
-            foreach ($models as $model) {
-                echo "- " . ($model['name'] ?? '[unknown]') . "\n";
-            }
-        }
+        return array_column($data['models'] ?? [], 'name');
     }
 
     /**
@@ -250,7 +242,6 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
         $status = $httpResponse->getStatusCode();
 
         if ($status === 200) {
-            echo "Model '$sourceModel' copied to '$destinationModel' successfully.\n";
             return true;
         } elseif ($status === 404) {
             throw InvalidArgumentException::invalidModel(
@@ -296,7 +287,6 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
         $status = $httpResponse->getStatusCode();
 
         if ($status === 200) {
-            echo "Model '$modelName' deleted successfully.\n";
             return true;
         } elseif ($status === 404) {
             throw InvalidArgumentException::invalidModel(
@@ -329,7 +319,6 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
 
         $availableModels = $this->getAvailableModels();
         if ($this->checkModelExists($modelName, $availableModels)) {
-            echo "Model '$modelName' is already available locally.\n";
             return true;
         }
 
@@ -406,38 +395,13 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
 
             // Check if success status exists in the response
             if (strpos($fullContent, '"status":"success"') !== false) {
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if (empty($line)) {
-                        continue;
-                    }
-
-                    $data = json_decode($line, true);
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        continue;
-                    }
-
-                    $status = $data['status'] ?? '';
-
-                    if (strpos($status, 'pulling') === 0 && isset($data['digest'])) {
-                        $digest = $data['digest'];
-                        $total = $data['total'] ?? 0;
-                        $completed = $data['completed'] ?? 0;
-                        if ($total > 0) {
-                            $percentage = round(($completed / $total) * 100, 1);
-                            echo "\rPulling $digest: $percentage%";
-                        }
-                    } elseif ($status === 'verifying sha256 digest') {
-                        echo "\nVerifying sha256 digest...\n";
-                    } elseif ($status === 'writing manifest') {
-                        echo "Writing manifest...\n";
-                    } elseif ($status === 'success') {
-                        echo "\nModel $modelName successfully pulled!\n";
-                    }
-                }
-
                 return true;
             }
+
+            throw new ProviderException(
+                $this->getName(),
+                ['message' => "Pull of model '$modelName' did not report success."]
+            );
         } catch (InvalidArgumentException $e) {
             throw $e;
         } catch (ProviderException $e) {
@@ -460,13 +424,8 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
     private function ensureModelAvailable(string $modelName): bool
     {
         $availableModels = $this->getAvailableModels();
-
-        $availableModels = $this->getAvailableModels();
         if (!$this->checkModelExists($modelName, $availableModels)) {
-            echo "Model $modelName not found locally. Attempting to pull...\n";
             $this->pullModel($modelName, true, false);
-        } elseif ($this->checkModelExists($modelName, $availableModels)) {
-            echo "Model $modelName is already available locally.\n";
         }
         return true;
     }
@@ -487,7 +446,6 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
 
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'tinyllama');
         $this->ensureModelAvailable($model);
-        echo "Using model: $model\n";
 
         if (isset($options['messages'])) {
             $messages = $options['messages'];
@@ -568,7 +526,6 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
 
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'tinyllama');
         $this->ensureModelAvailable($model);
-        echo "Using model: $model\n";
 
         $payload = [
             'model' => $model,

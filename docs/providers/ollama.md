@@ -84,7 +84,7 @@ echo "Available Models: " . implode(', ', $models) . "\n";
 ### List Running Models
 ```php
 $running = $ollama->getRunningModels();
-echo $running;
+echo "Running Models: " . implode(', ', $running) . "\n";
 ```
 
 ### Pull a Model
