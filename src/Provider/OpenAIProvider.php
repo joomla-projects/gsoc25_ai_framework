@@ -790,6 +790,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             ];
         }
 
+        $messages = $this->prependSystemMessage($messages, $options);
+
         $payload = [
             'model' => $model,
             'messages' => $messages
@@ -930,6 +932,26 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
+     * Build the assistant message for a conversation history, keeping any tool calls.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        $message = $response->getMetadata()['choices'][0]['message'] ?? null;
+
+        // Streamed responses have no choices; their text is all there is
+        if (!is_array($message)) {
+            return parent::buildAssistantMessage($response);
+        }
+
+        return ['role' => 'assistant'] + array_intersect_key($message, array_flip(['content', 'tool_calls']));
+    }
+
+    /**
      * Build the messages to append after running the tools requested in a response.
      *
      * @param   Response  $response  The response with tool calls
@@ -940,8 +962,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function buildToolResultMessages(Response $response, array $results): array
     {
-        $assistant = $response->getMetadata()['choices'][0]['message'] ?? ['role' => 'assistant', 'content' => null];
-        $messages = [array_intersect_key($assistant, array_flip(['role', 'content', 'tool_calls']))];
+        $messages = [$this->buildAssistantMessage($response)];
 
         foreach ($response->getToolCalls() as $call) {
             if (!array_key_exists($call['id'], $results)) {
@@ -1642,6 +1663,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function assertNotFlagged(string|array $input): void
     {
+        // Nothing new to check, e.g. a conversation turn that only sends tool results
+        if ($input === '' || $input === []) {
+            return;
+        }
+
         if ($this->moderateInput($input, [])) {
             throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }

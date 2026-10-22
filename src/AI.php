@@ -9,7 +9,9 @@
 
 namespace Joomla\AI;
 
+use Joomla\AI\Conversation\Conversation;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Interface\ChatInterface;
 
 /**
  * AI client class.
@@ -58,6 +60,24 @@ class AI
             $this->provider->getName(),
             ['message' => 'Method ' . $method . ' is not supported by ' . $this->provider->getName()],
         );
+    }
+
+    /**
+     * Start a conversation that remembers previous messages.
+     *
+     * @param   array  $options  Default chat options (system, model, tools, max_turns, ...)
+     *
+     * @return  Conversation
+     * @throws  ProviderException  If the provider cannot chat
+     * @since   __DEPLOY_VERSION__
+     */
+    public function conversation(array $options = []): Conversation
+    {
+        if (!$this->provider instanceof ChatInterface) {
+            throw new ProviderException($this->provider->getName(), ['message' => $this->provider->getName() . ' does not support chat.']);
+        }
+
+        return new Conversation($this->provider, $options);
     }
 
     /**

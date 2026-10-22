@@ -531,6 +531,8 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $messages = [$userMessage];
         }
 
+        $messages = $this->prependSystemMessage($messages, $options);
+
         $payload = [
             'model' => $model,
             'messages' => $messages,
@@ -564,6 +566,26 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
+     * Build the assistant message for a conversation history, keeping any tool calls.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        $message = parent::buildAssistantMessage($response);
+        $toolCalls = $response->getMetadata()['raw_tool_calls'] ?? [];
+
+        if ($toolCalls !== []) {
+            $message['tool_calls'] = $toolCalls;
+        }
+
+        return $message;
+    }
+
+    /**
      * Build the messages to append after running the tools requested in a response.
      *
      * @param   Response  $response  The response with tool calls
@@ -574,12 +596,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function buildToolResultMessages(Response $response, array $results): array
     {
-        $metadata = $response->getMetadata();
-        $messages = [[
-            'role' => 'assistant',
-            'content' => $response->getContent(),
-            'tool_calls' => $metadata['raw_tool_calls'] ?? [],
-        ]];
+        $messages = [$this->buildAssistantMessage($response)];
 
         foreach ($response->getToolCalls() as $call) {
             if (!array_key_exists($call['id'], $results)) {

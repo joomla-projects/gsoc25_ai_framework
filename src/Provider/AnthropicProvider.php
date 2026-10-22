@@ -373,9 +373,31 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
         }
 
         return [
-            ['role' => 'assistant', 'content' => $response->getMetadata()['content_blocks'] ?? []],
+            $this->buildAssistantMessage($response),
             ['role' => 'user', 'content' => $toolResults],
         ];
+    }
+
+    /**
+     * Build the assistant message for a conversation history.
+     *
+     * Uses all content blocks unchanged (thinking and tool_use included): newer models expect earlier
+     * assistant turns to be sent back exactly as they were returned.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        $blocks = $response->getMetadata()['content_blocks'] ?? null;
+
+        if (is_array($blocks) && $blocks !== []) {
+            return ['role' => 'assistant', 'content' => $blocks];
+        }
+
+        return parent::buildAssistantMessage($response);
     }
 
     /**

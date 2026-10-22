@@ -1053,6 +1053,43 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
     }
 
     /**
+     * Build the assistant message to add to a conversation history after a response.
+     *
+     * Providers override this to keep their native format (e.g. tool calls or thinking blocks),
+     * which some APIs need when the history is sent back.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array  A message in the provider's format
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        return ['role' => 'assistant', 'content' => $response->getContent()];
+    }
+
+    /**
+     * Put the "system" option at the start of a message list, for APIs that take it as a message.
+     * Nothing changes when there is no system option or the list already starts with a system message.
+     *
+     * @param   array  $messages  Chat messages
+     * @param   array  $options   Request options
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function prependSystemMessage(array $messages, array $options): array
+    {
+        $system = $options['system'] ?? null;
+
+        if (!is_string($system) || $system === '' || (($messages[0]['role'] ?? null) === 'system')) {
+            return $messages;
+        }
+
+        return array_merge([['role' => 'system', 'content' => $system]], $messages);
+    }
+
+    /**
      * Encode a tool result for sending back to the model.
      *
      * @param   mixed  $result  String, or any JSON-encodable value

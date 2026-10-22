@@ -73,6 +73,40 @@ $ollama = (new AIFactory())->getAI('ollama', [
 ]);
 ```
 
+### Conversations
+`conversation()` starts a multi-turn chat that remembers earlier messages. The history is kept in the `Conversation` object and sent with every message, so it works the same with OpenAI, Anthropic, Ollama and custom chat providers.
+
+```php
+$chat = $ai->conversation([
+    'system' => 'You are a helpful Joomla assistant.',
+    'model' => 'claude-opus-5-5',
+    'max_tokens' => 1000,
+]);
+
+$chat->send('My site runs Joomla 5. How do I enable SEF URLs?');
+$reply = $chat->send('And where do I check that it worked?'); // knows the earlier question
+
+echo $reply->getContent();
+print_r($chat->getUsage()); // tokens summed over all turns
+```
+
+- The options given to `conversation()` apply to every turn; `send($message, $options)` can override them for one turn.
+- `stream($message)` works like `chatStream()` and adds the reply to the history when the stream ends.
+- Tool calls: when a reply asks for tools, run them and call `submitToolResults([$id => $result])` to continue. `send()` throws until you do, because the APIs reject a new message while tool results are missing.
+- `max_turns` keeps only the last N user turns to limit tokens. It never splits a tool call from its result. Trimming changes the start of the history, so it reduces prompt-cache hits.
+- `getMessages()` returns the history in the provider's own format, and `clear()` empties it.
+
+Save a conversation (in a session, the database, ...) and pick it up later:
+
+```php
+$session->set('chat', json_encode($chat));
+
+$chat = Conversation::fromArray($ai->getProvider(), json_decode($session->get('chat'), true));
+$chat->send('Where were we?');
+```
+
+Pending tool calls are not saved, so finish them before storing.
+
 ### Streaming
 OpenAI, Anthropic and Ollama stream chat responses as they are generated. Use the generator, which yields text deltas and returns the final `Response`:
 
