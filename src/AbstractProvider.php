@@ -628,6 +628,109 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Normalise the "tools" option into a list of provider-neutral tool definitions.
+     *
+     * Each tool is ['name' => string, 'description' => string, 'parameters' => JSON schema array,
+     * 'strict' => bool (optional)].
+     *
+     * @param   array  $options  Request options
+     *
+     * @return  array  List of tools; empty when no tools were given
+     * @throws  InvalidArgumentException  If a tool definition is incomplete
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getToolDefinitions(array $options): array
+    {
+        $tools = [];
+
+        foreach ((array) ($options['tools'] ?? []) as $index => $tool) {
+            if (!is_array($tool) || !is_string($tool['name'] ?? null) || $tool['name'] === '') {
+                throw InvalidArgumentException::invalidParameter('tools', $tool, $this->getName(), "Tool at index $index must be an array with a 'name'.");
+            }
+
+            $parameters = $tool['parameters'] ?? ['type' => 'object', 'properties' => []];
+
+            // An empty PHP array would be encoded as [] instead of {}
+            if (is_array($parameters) && ($parameters['properties'] ?? null) === []) {
+                $parameters['properties'] = new \stdClass();
+            }
+
+            if (!is_array($parameters) && !is_object($parameters)) {
+                throw InvalidArgumentException::invalidParameter('tools', $tool, $this->getName(), "Tool '{$tool['name']}' parameters must be a JSON schema.");
+            }
+
+            $tools[] = [
+                'name'        => $tool['name'],
+                'description' => (string) ($tool['description'] ?? ''),
+                'parameters'  => $parameters,
+                'strict'      => isset($tool['strict']) ? (bool) $tool['strict'] : null,
+            ];
+        }
+
+        return $tools;
+    }
+
+    /**
+     * Normalise the "response_schema" option.
+     *
+     * Accepts a JSON schema directly, or ['name' => ..., 'schema' => [...], 'strict' => bool].
+     *
+     * @param   array  $options  Request options
+     *
+     * @return  array|null  ['name' => string, 'schema' => array, 'strict' => bool] or null when not set
+     * @throws  InvalidArgumentException  If the schema is not an array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getResponseSchema(array $options): ?array
+    {
+        if (!isset($options['response_schema'])) {
+            return null;
+        }
+
+        $option = $options['response_schema'];
+
+        if (!is_array($option)) {
+            throw InvalidArgumentException::invalidParameter('response_schema', $option, $this->getName(), 'response_schema must be a JSON schema array.');
+        }
+
+        $isWrapped = isset($option['schema']) && is_array($option['schema']);
+
+        return [
+            'name'   => (string) ($isWrapped ? ($option['name'] ?? 'response') : 'response'),
+            'schema' => $isWrapped ? $option['schema'] : $option,
+            'strict' => (bool) ($isWrapped ? ($option['strict'] ?? true) : true),
+        ];
+    }
+
+    /**
+     * Throw when tools are combined with streaming, which does not collect tool calls.
+     *
+     * @param   array  $options  Request options
+     *
+     * @throws  InvalidArgumentException
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function assertNoToolsWhenStreaming(array $options): void
+    {
+        if (!empty($options['tools'])) {
+            throw InvalidArgumentException::invalidParameter('tools', $options['tools'], $this->getName(), 'Tools are not supported with streaming. Call chat() without "stream" to get tool calls.');
+        }
+    }
+
+    /**
+     * Encode a tool result for sending back to the model.
+     *
+     * @param   mixed  $result  String, or any JSON-encodable value
+     *
+     * @return  string
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function encodeToolResult($result): string
+    {
+        return is_string($result) ? $result : (string) json_encode($result);
+    }
+
+    /**
      * Ensure required fields exist in a decoded API response.
      *
      * @param   array   $data          Decoded response

@@ -23,6 +23,7 @@ use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ModerationInterface;
 use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -31,7 +32,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface, StreamInterface
+class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface, StreamInterface, ToolInterface
 {
     /**
      * Custom base URL for API requests
@@ -476,6 +477,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function chatStream(string $message, array $options = []): \Generator
     {
+        $this->assertNoToolsWhenStreaming($options);
+
         if ($this->moderateInput($message, [])) {
             throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
         }
@@ -932,7 +935,128 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $payload['temperature'] = (float) $options['temperature'];
         }
 
+        return $this->addToolAndSchemaParameters($payload, $options);
+    }
+
+    /**
+     * Add tools, tool_choice and JSON schema output to a chat payload.
+     *
+     * @param   array  $payload  The request payload
+     * @param   array  $options  Request options (tools, tool_choice, parallel_tool_calls, response_schema)
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function addToolAndSchemaParameters(array $payload, array $options): array
+    {
+        $tools = $this->getToolDefinitions($options);
+
+        if ($tools !== []) {
+            $payload['tools'] = array_map(function (array $tool): array {
+                $function = [
+                    'name' => $tool['name'],
+                    'description' => $tool['description'],
+                    'parameters' => $tool['parameters'],
+                ];
+
+                if ($tool['strict'] !== null) {
+                    $function['strict'] = $tool['strict'];
+                }
+
+                return ['type' => 'function', 'function' => $function];
+            }, $tools);
+
+            if (isset($options['tool_choice'])) {
+                $choice = $options['tool_choice'];
+                $payload['tool_choice'] = is_array($choice) && isset($choice['name'])
+                    ? ['type' => 'function', 'function' => ['name' => $choice['name']]]
+                    : $choice;
+            }
+
+            if (isset($options['parallel_tool_calls'])) {
+                $payload['parallel_tool_calls'] = (bool) $options['parallel_tool_calls'];
+            }
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => $schema['name'],
+                    'schema' => $schema['schema'],
+                    'strict' => $schema['strict'],
+                ],
+            ];
+        }
+
         return $payload;
+    }
+
+    /**
+     * Build the messages to append after running the tools requested in a response.
+     *
+     * @param   Response  $response  The response with tool calls
+     * @param   array     $results   Tool call id => result
+     *
+     * @return  array  The assistant message and one "tool" message per result
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildToolResultMessages(Response $response, array $results): array
+    {
+        $assistant = $response->getMetadata()['choices'][0]['message'] ?? ['role' => 'assistant', 'content' => null];
+        $messages = [array_intersect_key($assistant, array_flip(['role', 'content', 'tool_calls']))];
+
+        foreach ($response->getToolCalls() as $call) {
+            if (!array_key_exists($call['id'], $results)) {
+                throw InvalidArgumentException::missingParameter("result for tool call '{$call['id']}'", 'openai');
+            }
+
+            $messages[] = [
+                'role' => 'tool',
+                'tool_call_id' => $call['id'],
+                'content' => $this->encodeToolResult($results[$call['id']]),
+            ];
+        }
+
+        return $messages;
+    }
+
+    /**
+     * Extract normalised tool calls from an OpenAI-style message.
+     *
+     * @param   array   $message       The assistant message
+     * @param   string  $responseBody  Raw response, for errors
+     *
+     * @return  array
+     * @throws  UnserializableResponseException  If tool call arguments are not valid JSON
+     * @since   __DEPLOY_VERSION__
+     */
+    private function extractToolCalls(array $message, string $responseBody): array
+    {
+        $calls = [];
+
+        foreach ((array) ($message['tool_calls'] ?? []) as $toolCall) {
+            if (!is_array($toolCall) || !is_string($toolCall['function']['name'] ?? null)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Tool call in response is missing a function name');
+            }
+
+            $arguments = $toolCall['function']['arguments'] ?? '{}';
+            $decoded = is_array($arguments) ? $arguments : json_decode((string) $arguments, true);
+
+            if (!is_array($decoded)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, "Arguments for tool '{$toolCall['function']['name']}' are not valid JSON");
+            }
+
+            $calls[] = [
+                'id' => (string) ($toolCall['id'] ?? ''),
+                'name' => $toolCall['function']['name'],
+                'arguments' => $decoded,
+            ];
+        }
+
+        return $calls;
     }
 
     /**
@@ -1634,7 +1758,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
             'created' => $data['created'] ?? time(),
             'id' => $data['id'] ?? null,
-            'choices' => $data['choices']
+            'choices' => $data['choices'],
+            'tool_calls' => $this->extractToolCalls((array) ($data['choices'][0]['message'] ?? []), $responseBody)
         ] + $this->normaliseOpenAIUsage($usage);
 
         return new Response(

@@ -17,6 +17,8 @@ use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -25,7 +27,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, StreamInterface
+class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, StreamInterface, ToolInterface
 {
     /**
      * Default model used when none is configured
@@ -280,7 +282,100 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             $payload['system'] = $options['system'];
         }
 
+        $tools = $this->getToolDefinitions($options);
+
+        if ($tools !== []) {
+            $payload['tools'] = array_map(function (array $tool): array {
+                $definition = [
+                    'name' => $tool['name'],
+                    'description' => $tool['description'],
+                    'input_schema' => $tool['parameters'],
+                ];
+
+                if ($tool['strict'] !== null) {
+                    $definition['strict'] = $tool['strict'];
+                }
+
+                return $definition;
+            }, $tools);
+
+            $toolChoice = $this->mapToolChoice($options['tool_choice'] ?? null);
+
+            if (isset($options['parallel_tool_calls']) && !$options['parallel_tool_calls']) {
+                $toolChoice ??= ['type' => 'auto'];
+                $toolChoice['disable_parallel_tool_use'] = true;
+            }
+
+            if ($toolChoice !== null) {
+                $payload['tool_choice'] = $toolChoice;
+            }
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['output_config']['format'] = [
+                'type' => 'json_schema',
+                'schema' => $schema['schema'],
+            ];
+        }
+
         return $payload;
+    }
+
+    /**
+     * Map the provider-neutral tool_choice option to Anthropic's format.
+     *
+     * Note: some models (e.g. claude-opus-5-5) reject "required" and a named tool; use "auto"
+     * and ask for the tool in the prompt there.
+     *
+     * @param   mixed  $choice  "auto", "none", "required", or ['name' => tool name]
+     *
+     * @return  array|null
+     * @since   __DEPLOY_VERSION__
+     */
+    private function mapToolChoice($choice): ?array
+    {
+        return match (true) {
+            $choice === null => null,
+            $choice === 'auto' => ['type' => 'auto'],
+            $choice === 'none' => ['type' => 'none'],
+            $choice === 'required' => ['type' => 'any'],
+            is_array($choice) && isset($choice['name']) => ['type' => 'tool', 'name' => $choice['name']],
+            is_array($choice) => $choice,
+            default => throw InvalidArgumentException::invalidParameter('tool_choice', $choice, 'anthropic', 'tool_choice must be "auto", "none", "required" or [\'name\' => tool].'),
+        };
+    }
+
+    /**
+     * Build the messages to append after running the tools requested in a response.
+     *
+     * @param   Response  $response  The response with tool calls
+     * @param   array     $results   Tool use id => result
+     *
+     * @return  array  The assistant message (all content blocks, including thinking) and a user message with tool_result blocks
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildToolResultMessages(Response $response, array $results): array
+    {
+        $toolResults = [];
+
+        foreach ($response->getToolCalls() as $call) {
+            if (!array_key_exists($call['id'], $results)) {
+                throw InvalidArgumentException::missingParameter("result for tool call '{$call['id']}'", 'anthropic');
+            }
+
+            $toolResults[] = [
+                'type' => 'tool_result',
+                'tool_use_id' => $call['id'],
+                'content' => $this->encodeToolResult($results[$call['id']]),
+            ];
+        }
+
+        return [
+            ['role' => 'assistant', 'content' => $response->getMetadata()['content_blocks'] ?? []],
+            ['role' => 'user', 'content' => $toolResults],
+        ];
     }
 
     /**
@@ -366,6 +461,8 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     public function chatStream(string $message, array $options = []): \Generator
     {
+        $this->assertNoToolsWhenStreaming($options);
+
         $payload = $this->buildChatRequestPayload($message, $options);
         $payload['stream'] = true;
 
@@ -467,9 +564,24 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
 
         // Join the text blocks; thinking and tool_use blocks may come before them
         $content = '';
+        $toolCalls = [];
         foreach ($data['content'] as $block) {
-            if (is_array($block) && ($block['type'] ?? null) === 'text') {
+            if (!is_array($block)) {
+                continue;
+            }
+
+            if (($block['type'] ?? null) === 'text') {
                 $content .= (string) ($block['text'] ?? '');
+            } elseif (($block['type'] ?? null) === 'tool_use') {
+                if (!is_string($block['name'] ?? null) || !is_array($block['input'] ?? null)) {
+                    throw new UnserializableResponseException($this->getName(), $responseBody, 'tool_use block is missing name or input');
+                }
+
+                $toolCalls[] = [
+                    'id' => (string) ($block['id'] ?? ''),
+                    'name' => $block['name'],
+                    'arguments' => $block['input'],
+                ];
             }
         }
 
@@ -483,7 +595,10 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'usage' => is_array($data['usage'] ?? null) ? $data['usage'] : [],
             'finish_reason' => $this->normaliseFinishReason($data['stop_reason'] ?? null),
             'stop_reason' => $data['stop_reason'] ?? null,
-            'stop_sequence' => $data['stop_sequence'] ?? null
+            'stop_sequence' => $data['stop_sequence'] ?? null,
+            'tool_calls' => $toolCalls,
+            // Kept so tool results can be sent back with the full assistant turn
+            'content_blocks' => $data['content']
         ] + $this->normaliseUsage(
             $data['usage']['input_tokens'] ?? null,
             $data['usage']['output_tokens'] ?? null

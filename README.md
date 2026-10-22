@@ -98,6 +98,61 @@ $response = $openai->chat('Write a haiku about Joomla', [
 
 Ollama also has `generateStream()`, and `generate()` accepts the same `stream` / `on_chunk` options. Streaming uses cURL directly (`Joomla\Http` buffers whole responses); the `timeout` and `http_options` options still apply, and a custom `Joomla\AI\Http\StreamTransportInterface` can be passed as `stream_transport`.
 
+### Tool calling
+Pass tools in one format for every provider (OpenAI, Anthropic, Ollama). The model's requests come back from `getToolCalls()` as `['id', 'name', 'arguments']`, and `buildToolResultMessages()` turns your results into the provider's own message format for the next turn:
+
+```php
+$tools = [[
+    'name' => 'get_weather',
+    'description' => 'Get the current weather for a city',
+    'parameters' => [
+        'type' => 'object',
+        'properties' => ['city' => ['type' => 'string']],
+        'required' => ['city'],
+        'additionalProperties' => false,
+    ],
+    'strict' => true, // optional
+]];
+
+$messages = [['role' => 'user', 'content' => 'What is the weather in Paris?']];
+$response = $ai->chat('', ['messages' => $messages, 'tools' => $tools]);
+
+while ($response->hasToolCalls()) {
+    $results = [];
+    foreach ($response->getToolCalls() as $call) {
+        $results[$call['id']] = getWeather($call['arguments']['city']); // your code
+    }
+
+    $messages = array_merge($messages, $ai->buildToolResultMessages($response, $results));
+    $response = $ai->chat('', ['messages' => $messages, 'tools' => $tools]);
+}
+
+echo $response->getContent();
+```
+
+`tool_choice` accepts `'auto'`, `'none'`, `'required'` or `['name' => 'get_weather']` (Ollama ignores it), and `'parallel_tool_calls' => false` limits the model to one call per turn. Some newer Claude models, such as `claude-opus-5-5`, reject `'required'` and a named tool; use `'auto'` and ask for the tool in the prompt. Tools can't be combined with streaming.
+
+### JSON schema output
+`response_schema` constrains the reply to a JSON schema (OpenAI `response_format`, Anthropic `output_config.format`, Ollama `format`). `getJson()` decodes it:
+
+```php
+$response = $ai->chat('Extract the person: Ada Lovelace, 36', [
+    'response_schema' => [
+        'name' => 'person', // optional, used by OpenAI
+        'schema' => [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string'], 'age' => ['type' => 'integer']],
+            'required' => ['name', 'age'],
+            'additionalProperties' => false,
+        ],
+    ],
+]);
+
+$person = $response->getJson(); // ['name' => 'Ada Lovelace', 'age' => 36]
+```
+
+You can also pass the schema directly as `response_schema`.
+
 ### Custom providers and DI
 `AIFactory` is a regular service: inject an `HttpFactory` and register extra providers (any class extending `AbstractProvider`), or pass a provider class name straight to `getAI()`.
 

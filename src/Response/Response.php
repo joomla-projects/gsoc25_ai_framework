@@ -9,6 +9,7 @@
 
 namespace Joomla\AI\Response;
 
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\Filesystem\File;
 use Joomla\Filesystem\Folder;
 use Joomla\Filesystem\Path;
@@ -196,6 +197,47 @@ class Response extends HttpResponse
     public function getFinishReason(): ?string
     {
         return $this->metadata['finish_reason'] ?? null;
+    }
+
+    /**
+     * Get the tool calls requested by the model, the same shape for every provider.
+     *
+     * @return  array<int, array{id: string, name: string, arguments: array}>
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getToolCalls(): array
+    {
+        return $this->metadata['tool_calls'] ?? [];
+    }
+
+    /**
+     * Check whether the model asked for one or more tool calls.
+     *
+     * @return  bool
+     * @since  __DEPLOY_VERSION__
+     */
+    public function hasToolCalls(): bool
+    {
+        return $this->getToolCalls() !== [];
+    }
+
+    /**
+     * Decode the content as JSON, e.g. for responses requested with "response_schema".
+     *
+     * @return  array
+     * @throws  UnserializableResponseException  If the content is not a JSON object or array
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getJson(): array
+    {
+        $content = $this->getContent();
+        $decoded = json_decode($content, true);
+
+        if (!is_array($decoded)) {
+            throw new UnserializableResponseException($this->provider, $content, 'Response content is not valid JSON: ' . json_last_error_msg());
+        }
+
+        return $decoded;
     }
 
     /**

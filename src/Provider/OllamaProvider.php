@@ -11,6 +11,7 @@ use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -19,7 +20,7 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface, EmbeddingInterface, StreamInterface
+class OllamaProvider extends AbstractProvider implements ProviderInterface, ChatInterface, EmbeddingInterface, StreamInterface, ToolInterface
 {
     /**
      * Custom base URL for API requests
@@ -503,7 +504,59 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $payload['stream'] = (bool) $options['stream'];
         }
 
+        $tools = $this->getToolDefinitions($options);
+
+        if ($tools !== []) {
+            $payload['tools'] = array_map(fn (array $tool): array => [
+                'type' => 'function',
+                'function' => [
+                    'name' => $tool['name'],
+                    'description' => $tool['description'],
+                    'parameters' => $tool['parameters'],
+                ],
+            ], $tools);
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['format'] = $schema['schema'];
+        }
+
         return $payload;
+    }
+
+    /**
+     * Build the messages to append after running the tools requested in a response.
+     *
+     * @param   Response  $response  The response with tool calls
+     * @param   array     $results   Tool call id (as returned by getToolCalls()) => result
+     *
+     * @return  array  The assistant message and one "tool" message per result
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildToolResultMessages(Response $response, array $results): array
+    {
+        $metadata = $response->getMetadata();
+        $messages = [[
+            'role' => 'assistant',
+            'content' => $response->getContent(),
+            'tool_calls' => $metadata['raw_tool_calls'] ?? [],
+        ]];
+
+        foreach ($response->getToolCalls() as $call) {
+            if (!array_key_exists($call['id'], $results)) {
+                throw InvalidArgumentException::missingParameter("result for tool call '{$call['id']}'", 'ollama');
+            }
+
+            $messages[] = [
+                'role' => 'tool',
+                'tool_name' => $call['name'],
+                'content' => $this->encodeToolResult($results[$call['id']]),
+            ];
+        }
+
+        return $messages;
     }
 
     /**
@@ -553,6 +606,8 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function chatStream(string $message, array $options = []): \Generator
     {
+        $this->assertNoToolsWhenStreaming($options);
+
         $payload = $this->buildChatRequestPayload($message, $options);
         $payload['stream'] = true;
 
@@ -723,6 +778,12 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
 
         if (isset($options['format'])) {
             $payload['format'] = $options['format'];
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['format'] = $schema['schema'];
         }
 
         if (isset($options['options']) && is_array($options['options'])) {
@@ -928,6 +989,28 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
         // Add chat-specific metadata
         if ($isChat && isset($data['message']['role'])) {
             $metadata['role'] = $data['message']['role'];
+        }
+
+        if ($isChat) {
+            $rawToolCalls = is_array($data['message']['tool_calls'] ?? null) ? $data['message']['tool_calls'] : [];
+            $metadata['raw_tool_calls'] = $rawToolCalls;
+            $metadata['tool_calls'] = [];
+
+            foreach ($rawToolCalls as $index => $toolCall) {
+                $arguments = $toolCall['function']['arguments'] ?? [];
+                $arguments = is_string($arguments) ? json_decode($arguments, true) : $arguments;
+
+                if (!is_string($toolCall['function']['name'] ?? null) || !is_array($arguments)) {
+                    throw new UnserializableResponseException($this->getName(), $responseBody, 'Tool call in response is missing a function name or valid arguments');
+                }
+
+                // Older Ollama versions do not return ids
+                $metadata['tool_calls'][] = [
+                    'id' => (string) ($toolCall['id'] ?? 'call_' . $index),
+                    'name' => $toolCall['function']['name'],
+                    'arguments' => $arguments,
+                ];
+            }
         }
 
         // Add generate-specific metadata
