@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * Part of the Joomla Framework AI Package
+ *
+ * @copyright  Copyright (C) 2025 Open Source Matters, Inc. All rights reserved.
+ * @license    GNU General Public License version 2 or later; see LICENSE
+ */
+
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
@@ -28,7 +35,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      * @var string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
+    private string $baseUrl;
 
     /**
      * Constructor.
@@ -38,7 +45,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -219,25 +226,47 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function checkModelExists(string $modelName, array $availableModels): bool
     {
-        // To Do: Improve logic
-        if (in_array($modelName, $availableModels)) {
-            return true;
-        }
+        $wanted = $this->normaliseModelName($modelName);
 
-        // Check with :latest suffix added
-        if (!str_ends_with($modelName, ':latest') && in_array($modelName . ':latest', $availableModels)) {
-            return true;
-        }
-
-        // Check with :latest suffix removed
-        if (str_ends_with($modelName, ':latest')) {
-            $baseModelName = str_replace(':latest', '', $modelName);
-            if (in_array($baseModelName, $availableModels)) {
+        foreach ($availableModels as $available) {
+            if ($this->normaliseModelName((string) $available) === $wanted) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Check whether a model is available locally. "llama3" and "llama3:latest" are the same model.
+     *
+     * @param   string  $modelName  The model name
+     *
+     * @return  bool
+     * @throws  AuthenticationException  If the server is not running
+     * @since   __DEPLOY_VERSION__
+     */
+    public function hasModel(string $modelName): bool
+    {
+        $this->validateConnection();
+
+        return $this->checkModelExists($modelName, $this->getAvailableModels());
+    }
+
+    /**
+     * Normalise an Ollama model name: a name without a tag means the "latest" tag.
+     *
+     * @param   string  $modelName  e.g. "llama3", "llama3:latest", "library/llama3:8b"
+     *
+     * @return  string  e.g. "llama3:latest", "llama3:latest", "library/llama3:8b"
+     * @since   __DEPLOY_VERSION__
+     */
+    private function normaliseModelName(string $modelName): string
+    {
+        // The tag follows the last ":" after the last "/" (a registry host may contain a port)
+        $name = substr($modelName, (int) strrpos('/' . $modelName, '/'));
+
+        return str_contains($name, ':') ? $modelName : $modelName . ':latest';
     }
 
     /**
@@ -350,7 +379,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  ProviderException        If pull fails for other reasons
      * @since   __DEPLOY_VERSION__
      */
-    public function pullModel(string $modelName, bool $stream = true, bool $insecure = false)
+    public function pullModel(string $modelName, bool $stream = true, bool $insecure = false): bool
     {
         $this->validateConnection();
 
@@ -477,7 +506,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \InvalidArgumentException  If model does not support chat capability
      * @since  __DEPLOY_VERSION__
      */
-    public function buildChatRequestPayload(mixed $message, array $options = [])
+    public function buildChatRequestPayload(mixed $message, array $options = []): array
     {
         $this->validateConnection();
 
@@ -651,7 +680,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  ProviderException  If the request fails
      * @since   __DEPLOY_VERSION__
      */
-    public function createEmbeddings($input, string $model, array $options = []): Response
+    public function createEmbeddings(string|array $input, string $model, array $options = []): Response
     {
         $this->validateConnection();
         $this->ensureModelAvailable($model);

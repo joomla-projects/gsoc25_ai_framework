@@ -59,7 +59,7 @@ use Joomla\AI\AIFactory;
 
 $anthropic = (new AIFactory())->getAI('anthropic', [
   'api_key' => getenv('ANTHROPIC_API_KEY'),
-  // 'model' => 'claude-3-5-sonnet',
+  // 'model' => 'claude-opus-5-5',
 ]);
 ```
 
@@ -202,9 +202,9 @@ $custom  = $factory->getAI(MyProvider::class, []);
 
 | Provider | Methods |
 | --- | --- |
-| OpenAI | `chat`, `vision`, `generateImage`, `createImageVariation`, `editImage`, `speech`, `transcribe`, `translate`, `createEmbeddings`, `moderate`, `isContentFlagged`|
-| Anthropic | `chat`, `vision`, `getModel`|
-| Ollama | `chat`, `generate`, `pullModel`, `copyModel`, `deleteModel`, `checkModelExists`, `getRunningModels`|
+| OpenAI | `chat`, `chatStream`, `vision`, `generateImage`, `createImageVariation`, `editImage`, `speech`, `transcribe`, `translate`, `createEmbeddings`, `moderate`, `isContentFlagged`, `buildToolResultMessages`|
+| Anthropic | `chat`, `chatStream`, `vision`, `getModel`, `getAvailableModels`, `isModelCapable`, `buildToolResultMessages`|
+| Ollama | `chat`, `generate`, `pullModel`, `copyModel`, `deleteModel`, `hasModel`, `getAvailableModels`, `getRunningModels`, `vision`, `createEmbeddings`, `chatStream`, `generateStream`|
 
 Not all providers implement every capability. The framework exposes capabilities via interfaces (e.g. ChatInterface, ImageInterface). Developers can use what each provider supports.
 

@@ -48,7 +48,7 @@ class AI
      * @throws  ProviderException  If the provider doesn't have the method
      * @since   __DEPLOY_VERSION__
      */
-    public function __call(string $method, array $arguments)
+    public function __call(string $method, array $arguments): mixed
     {
         if (method_exists($this->provider, $method)) {
             return $this->provider->$method(...$arguments);

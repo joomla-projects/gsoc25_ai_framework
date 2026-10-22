@@ -103,6 +103,26 @@ class OllamaTest extends TestCase
         $this->assertSame(['llama3:latest'], $provider->getRunningModels());
     }
 
+    public function testHasModelTreatsMissingTagAsLatest(): void
+    {
+        $provider = $this->provider([
+            'GET ' . self::BASE . '/api/tags' => ['models' => [
+                ['name' => 'llama3:latest'],
+                ['name' => 'mistral:7b'],
+                ['name' => 'registry.local:5000/team/coder'],
+            ]],
+        ]);
+
+        $this->assertTrue($provider->hasModel('llama3'));
+        $this->assertTrue($provider->hasModel('llama3:latest'));
+        $this->assertTrue($provider->hasModel('mistral:7b'));
+        $this->assertFalse($provider->hasModel('mistral'));
+        $this->assertFalse($provider->hasModel('mistral:latest'));
+        // The ":5000" port is not a tag
+        $this->assertTrue($provider->hasModel('registry.local:5000/team/coder:latest'));
+        $this->assertFalse($provider->hasModel('gemma'));
+    }
+
     public function testCopyAndDeleteModel(): void
     {
         $provider = $this->provider([

@@ -43,7 +43,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      * @var    string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
+    private string $baseUrl;
 
     /**
      * Constructor.
@@ -53,7 +53,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -334,7 +334,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      * @return  array|null
      * @since   __DEPLOY_VERSION__
      */
-    private function mapToolChoice($choice): ?array
+    private function mapToolChoice(mixed $choice): ?array
     {
         return match (true) {
             $choice === null => null,

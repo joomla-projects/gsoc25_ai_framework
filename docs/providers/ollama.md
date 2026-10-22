@@ -109,7 +109,7 @@ echo "Model removed to free up space\n";
 
 ### Check Model Availability
 ```php
-if ($ollama->checkModelExists('llama3')) {
+if ($ollama->hasModel('llama3')) {
     echo "Llama3 is available locally\n";
 } else {
     echo "Pulling Llama3...\n";
@@ -179,7 +179,7 @@ try {
 ```php
 // Verify model availability before use
 $modelName = 'llama3';
-if (!$ollama->checkModelExists($modelName)) {
+if (!$ollama->hasModel($modelName)) {
     echo "Model $modelName not found. Available models:\n";
 }
 ```

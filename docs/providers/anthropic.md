@@ -17,7 +17,7 @@ use Joomla\AI\AIFactory;
 
 $anthropic = (new AIFactory())->getAI('anthropic', [
     'api_key' => getenv('ANTHROPIC_API_KEY'), // Required: the key is only read from this option
-    'model' => 'claude-3-5-sonnet', // Optional: default model
+    'model' => 'claude-opus-5-5', // Optional: default model
     'timeout' => 60, // Optional: request timeout in seconds
     'http_options' => [], // Optional: passed to HttpFactory::getHttp()
 ]);
@@ -36,9 +36,9 @@ echo $response->getContent();
 ### Advanced Chat with options
 ```php
 $response = $anthropic->chat("How do I optimize database queries in Joomla?", [
-    'model' => 'claude-3-5-sonnet',
+    'model' => 'claude-opus-5-5',
     'max_tokens' => 1000,
-    'temperature' => 0.3
+    'system' => 'You are a Joomla performance expert. Answer concisely.'
 ]);
 
 $metadata = $response->getMetadata();
@@ -46,6 +46,8 @@ echo "Model used: " . $metadata['model'] . "\n";
 echo "Tokens used: " . $response->getUsage()['total_tokens'] . "\n";
 echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
+
+`temperature`, `top_p` and `top_k` are passed through when set, but current Claude models (e.g. `claude-opus-5-5`, `claude-sonnet-5-5`) reject non-default sampling values with a 400 error. Steer the output with `system` instead.
 
 ### Message History
 ```php
@@ -82,7 +84,7 @@ $response = $anthropic->vision(
     "Review this UI mockup and provide detailed feedback on the design principles",
     "data:image/png;base64," . $imageData,
     [
-        'model' => 'claude-3-5-sonnet',
+        'model' => 'claude-opus-5-5',
         'max_tokens' => 1500
     ]
 );
@@ -104,7 +106,7 @@ Set defaults for consistent model usage:
 
 ```php
 // Set a default model
-$anthropic->setDefaultModel('claude-3-5-sonnet');
+$anthropic->setDefaultModel('claude-sonnet-5-5');
 
 // These will use the default
 $chat1 = $anthropic->chat("What is web accessibility?");
@@ -112,7 +114,7 @@ $vision1 = $anthropic->vision("Describe this image", $imageUrl);
 
 // Override for specific calls
 $detailed = $anthropic->chat("Provide a comprehensive analysis", [
-    'model' => 'claude-3-opus',
+    'model' => 'claude-opus-5-5',
     'max_tokens' => 2000
 ]);
 

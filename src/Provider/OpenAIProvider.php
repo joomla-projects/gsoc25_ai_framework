@@ -26,6 +26,7 @@ use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
+use Joomla\Http\Response as HttpResponse;
 
 /**
  * OpenAI provider implementation for chat completions.
@@ -40,7 +41,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @var string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
+    private string $baseUrl;
 
     /**
      * Constructor.
@@ -50,7 +51,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -444,24 +445,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
         }
 
-        // Apply moderation to the chat message
-        $isBlocked = $this->moderateInput($message, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($message);
 
         $payload = $this->buildChatRequestPayload($message, $options);
 
-        // To Do: Remove repetition
-        $endpoint = $this->getChatEndpoint();
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $endpoint,
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
 
         return $this->parseOpenAIResponse($httpResponse->getBody());
     }
@@ -479,9 +467,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $this->assertNoToolsWhenStreaming($options);
 
-        if ($this->moderateInput($message, [])) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($message);
 
         $payload = $this->buildChatRequestPayload($message, $options);
         $payload['stream'] = true;
@@ -561,22 +547,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             ['type' => 'text', 'text' => $message],
             ['type' => 'image_url', 'image_url' => ['url' => $image]]
         ];
-        $isBlocked = $this->moderateInput($multiModalInput, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($multiModalInput);
 
         $payload = $this->buildVisionRequestPayload($message, $image, 'vision', $options);
 
-        $endpoint = $this->getChatEndpoint();
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $endpoint,
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
 
         return $this->parseOpenAIResponse($httpResponse->getBody());
     }
@@ -592,22 +567,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function generateImage(string $prompt, array $options = []): Response
     {
-        // Apply moderation to the image generation prompt
-        $isBlocked = $this->moderateInput($prompt, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($prompt);
 
         $payload = $this->buildImageRequestPayload($prompt, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getImageEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getImageEndpoint(), $payload);
 
         return $this->parseImageResponse($httpResponse->getBody(), $payload);
     }
@@ -639,21 +603,16 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Edit an image using OpenAI Image API.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   array   $options  Additional options for the request
      *
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function editImage($images, string $prompt, array $options = []): Response
+    public function editImage(string|array $images, string $prompt, array $options = []): Response
     {
-        // Apply moderation to the image editing prompt
-        $isBlocked = $this->moderateInput($prompt, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($prompt);
 
         $payload = $this->buildImageEditPayload($images, $prompt, $options);
 
@@ -679,18 +638,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function speech(string $text, array $options = []): Response
     {
-        // Apply moderation to the text input for speech generation
-        $isBlocked = $this->moderateInput($text, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($text);
 
         $payload = $this->buildSpeechPayload($text, $options);
 
-        $endpoint = $this->getAudioSpeechEndpoint();
-        $headers = $this->buildHeaders();
-        $httpResponse = $this->makePostRequest($endpoint, json_encode($payload), $headers);
+        $httpResponse = $this->postJson($this->getAudioSpeechEndpoint(), $payload);
 
         return $this->parseAudioResponse($httpResponse->getBody(), $payload);
     }
@@ -753,24 +705,13 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function createEmbeddings($input, string $model, array $options = []): Response
+    public function createEmbeddings(string|array $input, string $model, array $options = []): Response
     {
-        // Apply moderation to the text input for embeddings
-        $isBlocked = $this->moderateInput($input, []);
-
-        if ($isBlocked) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
+        $this->assertNotFlagged($input);
 
         $payload = $this->buildEmbeddingPayload($input, $model, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getEmbeddingsEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getEmbeddingsEndpoint(), $payload);
 
         return $this->parseEmbeddingResponse($httpResponse->getBody(), $payload);
     }
@@ -785,7 +726,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \Exception
      * @since   __DEPLOY_VERSION__
      */
-    public function moderate($input, array $options = []): array
+    public function moderate(string|array $input, array $options = []): array
     {
         $model = $options['model'] ?? 'omni-moderation-latest';
 
@@ -796,13 +737,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'model' => $model
         ];
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getModerationEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getModerationEndpoint(), $payload);
 
         $data = $this->parseJsonResponse($httpResponse->getBody());
 
@@ -1099,7 +1034,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             ]
         ];
 
-        // To Do: Add optional parameters if provided
+        // Same optional parameters as chat()
         if (isset($options['max_tokens'])) {
             $payload['max_tokens'] = (int) $options['max_tokens'];
         }
@@ -1109,10 +1044,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         if (isset($options['n'])) {
-            $payload['n'] = (int) $options['n'];
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 128) {
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 128.', ['min_value' => 1, 'max_value' => 128]);
+            }
+            $payload['n'] = $n;
         }
 
-        return $payload;
+        return $this->addToolAndSchemaParameters($payload, $options);
     }
 
     /**
@@ -1280,14 +1219,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Build payload for image editing request.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   array   $options  Additional options
      *
      * @return  array
      * @since   __DEPLOY_VERSION__
      */
-    private function buildImageEditPayload($images, string $prompt, array $options): array
+    private function buildImageEditPayload(string|array $images, string $prompt, array $options): array
     {
         $model = $options['model'] ?? $this->defaultModel ??  $this->getOption('model', 'dall-e-2');
 
@@ -1633,7 +1572,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function buildEmbeddingPayload($input, string $model, array $options): array
+    private function buildEmbeddingPayload(string|array $input, string $model, array $options): array
     {
         // Validate model
         $this->assertModelCapable($model, 'embedding', 'embedding');
@@ -1670,6 +1609,42 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         return $payload;
+    }
+
+    /**
+     * POST a JSON payload to an OpenAI endpoint with the standard headers.
+     *
+     * @param   string  $endpoint  The endpoint URL
+     * @param   array   $payload   The request payload
+     *
+     * @return  \Joomla\Http\Response
+     * @throws  ProviderException  If the payload cannot be encoded
+     * @since   __DEPLOY_VERSION__
+     */
+    private function postJson(string $endpoint, array $payload): HttpResponse
+    {
+        $json = json_encode($payload);
+
+        if ($json === false) {
+            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
+        }
+
+        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
+    }
+
+    /**
+     * Throw if automatic moderation flags the input (see the "moderate_input" option).
+     *
+     * @param   string|array  $input  Text or multimodal input
+     *
+     * @throws  AIException  If the content is flagged
+     * @since   __DEPLOY_VERSION__
+     */
+    private function assertNotFlagged(string|array $input): void
+    {
+        if ($this->moderateInput($input, [])) {
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
+        }
     }
 
     /**
@@ -1827,9 +1802,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function parseImageResponse(string $responseBody, array $payload): Response
     {
-        // To Do: Clean Image API response for generation and editing
         $data = $this->parseJsonResponse($responseBody);
-        // error_log('OpenAI Image Response: ' . print_r($data, true));
 
         if (isset($data['error'])) {
             throw new ProviderException($this->getName(), $data);
@@ -1837,48 +1810,27 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $this->assertResponseFields($data, ['data[]'], $responseBody);
 
+        // Generation and editing return the same shape: a list of {url|b64_json, revised_prompt?}
         $images = [];
         $responseFormat = '';
 
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $imageData) {
-                if (!is_array($imageData)) {
-                    throw new UnserializableResponseException($this->getName(), $responseBody, 'Image entries in response must be objects');
-                }
+        foreach ($data['data'] as $imageData) {
+            if (!is_array($imageData)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Image entries in response must be objects');
+            }
 
-                $imageItem = [];
+            $images[] = array_intersect_key($imageData, array_flip(['url', 'b64_json', 'revised_prompt']));
 
-                // Handle URL format
-                if (isset($imageData['url'])) {
-                    $imageItem['url'] = $imageData['url'];
-                    $responseFormat = 'url';
-                }
-
-                // Handle base64 format
-                if (isset($imageData['b64_json'])) {
-                    $imageItem['b64_json'] = $imageData['b64_json'];
-                    $responseFormat = 'b64_json';
-                }
-
-                // Handle revised prompt (DALL-E 3 only)
-                if (isset($imageData['revised_prompt'])) {
-                    $imageItem['revised_prompt'] = $imageData['revised_prompt'];
-                }
-
-                $images[] = $imageItem;
+            if (isset($imageData['b64_json'])) {
+                $responseFormat = 'b64_json';
+            } elseif (isset($imageData['url'])) {
+                $responseFormat = 'url';
             }
         }
 
-        $content = '';
-        if ($responseFormat === 'url') {
-            // For URLs, create a clean list
-            $urls = array_column($images, 'url');
-            $content = count($urls) === 1 ? $urls[0] : json_encode($urls, JSON_PRETTY_PRINT);
-        } elseif ($responseFormat === 'b64_json') {
-            // For base64, return the data
-            $base64Data = array_column($images, 'b64_json');
-            $content = count($base64Data) === 1 ? $base64Data[0] : json_encode($base64Data, JSON_PRETTY_PRINT);
-        }
+        // One image: the URL or base64 string; several: a JSON list of them
+        $values = $responseFormat === '' ? [] : array_column($images, $responseFormat);
+        $content = count($values) === 1 ? $values[0] : ($values === [] ? '' : json_encode($values, JSON_PRETTY_PRINT));
 
         $metadata = [
             'model' => $data['model'] ?? $payload['model'] ?? null,
@@ -1891,16 +1843,13 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if ($responseFormat === 'url') {
             $metadata['url_expires'] = 'URLs are valid for 60 minutes';
         } elseif ($responseFormat === 'b64_json') {
-            $metadata['format'] = 'base64_png';
+            // gpt-image-1 can return jpeg or webp; the other models return png
+            $metadata['format'] = 'base64_' . ($data['output_format'] ?? $payload['output_format'] ?? 'png');
         }
 
         if (isset($data['usage']) && is_array($data['usage'])) {
             $metadata['usage'] = $data['usage'];
             $metadata += $this->normaliseOpenAIUsage($data['usage']);
-        }
-
-        if (isset($data['model'])) {
-            $metadata['model'] = $data['model'];
         }
 
         return new Response(
@@ -2164,7 +2113,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Validate inputs for image editing.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   string  $model    The model to use
      * @param   array   $options  Additional options
@@ -2172,7 +2121,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \InvalidArgumentException  If inputs are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function validateImageEditInputs($images, string $prompt, string $model, array $options): void
+    private function validateImageEditInputs(string|array $images, string $prompt, string $model, array $options): void
     {
         $this->validateImagePrompt($prompt, $model);
 

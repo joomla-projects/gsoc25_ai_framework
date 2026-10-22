@@ -25,7 +25,7 @@ interface ModerationInterface
      * @return  array
      * @since   __DEPLOY_VERSION__
      */
-    public function moderate($input, array $options = []): array;
+    public function moderate(string|array $input, array $options = []): array;
 
     /**
      * Check if content is flagged by the moderation system.

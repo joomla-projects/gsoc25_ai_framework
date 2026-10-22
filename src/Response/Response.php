@@ -10,9 +10,6 @@
 namespace Joomla\AI\Response;
 
 use Joomla\AI\Exception\UnserializableResponseException;
-use Joomla\Filesystem\File;
-use Joomla\Filesystem\Folder;
-use Joomla\Filesystem\Path;
 use Joomla\Http\Response as HttpResponse;
 
 /**
@@ -74,19 +71,18 @@ class Response extends HttpResponse
     /**
      * Save the response content to file(s) based on response format.
      *
-     * @param string $filename  The base filename.
+     * @param   string  $filename  The base filename. Several images are saved as name_1.ext, name_2.ext, ...
      *
-     * @throws \RuntimeException
+     * @return  array|false  The saved file paths, or false when there was nothing to save
+     * @throws  \RuntimeException  If the directory cannot be created or a file cannot be written
      * @since  __DEPLOY_VERSION__
      */
-    public function saveFile(string $filename)
+    public function saveFile(string $filename): array|false
     {
         // Create directory if it doesn't exist
         $dir = dirname($filename);
-        if (!is_dir($dir)) {
-            if (!Folder::create($dir)) {
-                throw new \RuntimeException('Failed to create directory: ' . $dir);
-            }
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Failed to create directory: ' . $dir);
         }
 
         $metadata = $this->getMetadata();
@@ -95,27 +91,24 @@ class Response extends HttpResponse
 
         // Handle images with base64 data
         if ($format === 'b64_json') {
-            $savedFiles = [];
             $imageCount = $metadata['image_count'] ?? 1;
-            $dir = Path::clean(dirname($filename));
+
+            if ($imageCount === 1) {
+                $this->writeFile($filename, (string) base64_decode($content));
+
+                return [$filename];
+            }
+
+            $savedFiles = [];
             $baseName = pathinfo($filename, PATHINFO_FILENAME);
             $ext = pathinfo($filename, PATHINFO_EXTENSION) ?: 'png';
 
-            if ($imageCount === 1) {
-                $decodedContent = base64_decode($content);
-                if (File::write($filename, $decodedContent)) {
-                    $savedFiles[] = $filename;
-                }
-            } else {
-                $data = json_decode($content, true);
-                foreach ($data as $index => $b64) {
-                    $file = Path::clean($dir . '/' . $baseName . '_' . ($index + 1) . '.' . $ext);
-                    $decodedContent = base64_decode($b64);
-                    if (File::write($file, $decodedContent)) {
-                        $savedFiles[] = $file;
-                    }
-                }
+            foreach ((array) json_decode($content, true) as $index => $b64) {
+                $file = $dir . DIRECTORY_SEPARATOR . $baseName . '_' . ($index + 1) . '.' . $ext;
+                $this->writeFile($file, (string) base64_decode((string) $b64));
+                $savedFiles[] = $file;
             }
+
             return $savedFiles;
         }
 
@@ -137,27 +130,36 @@ class Response extends HttpResponse
             }
 
             if (!empty($lines)) {
-                if (File::write($filename, implode(PHP_EOL, $lines))) {
-                    return [$filename];
-                }
-            }
-        }
+                $this->writeFile($filename, implode(PHP_EOL, $lines));
 
-        // For binary content (like audio files)
-        if (isset($metadata['data_type']) && $metadata['data_type'] === 'binary_audio') {
-            if (File::write($filename, $content)) {
                 return [$filename];
             }
         }
 
-        // For all other content
+        // Binary audio and all other non-empty content are written as is
         if ($content !== '') {
-            if (File::write($filename, $content)) {
-                return [$filename];
-            }
+            $this->writeFile($filename, $content);
+
+            return [$filename];
         }
 
         return false;
+    }
+
+    /**
+     * Write a file, throwing on failure.
+     *
+     * @param   string  $file      The file path
+     * @param   string  $contents  The contents
+     *
+     * @throws  \RuntimeException  If the file cannot be written
+     * @since   __DEPLOY_VERSION__
+     */
+    private function writeFile(string $file, string $contents): void
+    {
+        if (@file_put_contents($file, $contents) === false) {
+            throw new \RuntimeException('Failed to write file: ' . $file);
+        }
     }
 
     /**

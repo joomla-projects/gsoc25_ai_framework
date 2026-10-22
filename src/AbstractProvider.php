@@ -9,7 +9,9 @@
 
 namespace Joomla\AI;
 
+use Joomla\Http\Http;
 use Joomla\Http\HttpFactory;
+use Joomla\Http\Response as HttpResponse;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
@@ -38,7 +40,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @var    array|\ArrayAccess
      * @since  __DEPLOY_VERSION__
      */
-    protected $options;
+    protected array|\ArrayAccess $options;
 
     /**
      * The HTTP factory instance.
@@ -46,7 +48,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @var    HttpFactory
      * @since  __DEPLOY_VERSION__
      */
-    protected $httpFactory;
+    protected HttpFactory $httpFactory;
 
     /**
      * The default model to use for API requests.
@@ -54,7 +56,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @var    string|null
      * @since  __DEPLOY_VERSION__
      */
-    protected $defaultModel = null;
+    protected ?string $defaultModel = null;
 
     /**
      * PSR-3 logger
@@ -78,26 +80,18 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @var    array|null
      * @since  __DEPLOY_VERSION__
      */
-    private $capabilities = null;
+    private ?array $capabilities = null;
 
     /**
      * Constructor.
      *
-     * @param   mixed         $options      Provider options array.
+     * @param   array|\ArrayAccess  $options      Provider options array.
      * @param   HttpFactory   $httpFactory  The http factory
      *
-     * @throws  \InvalidArgumentException
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
-        // Validate provider is suported
-        if (!\is_array($options) && !($options instanceof \ArrayAccess)) {
-            throw new \InvalidArgumentException(
-                'The options param must be an array or implement the ArrayAccess interface.'
-            );
-        }
-
         $this->options = $options;
         $this->httpFactory = $httpFactory ?: new HttpFactory();
     }
@@ -109,9 +103,9 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @param   mixed   $default  The default value if the option is not set.
      *
      * @return  mixed The option value.
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    protected function getOption(string $key, $default = null)
+    protected function getOption(string $key, mixed $default = null): mixed
     {
         return $this->options[$key] ?? $default;
     }
@@ -122,7 +116,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @param   string  $model  The model name to set as default
      * @since   __DEPLOY_VERSION__
      */
-    public function setDefaultModel(string $model)
+    public function setDefaultModel(string $model): static
     {
         $this->defaultModel = $model;
         return $this;
@@ -133,7 +127,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function unsetDefaultModel()
+    public function unsetDefaultModel(): static
     {
         $this->defaultModel = null;
         return $this;
@@ -145,7 +139,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  string|null  The current default model or null if not set
      * @since   __DEPLOY_VERSION__
      */
-    public function getDefaultModel()
+    public function getDefaultModel(): ?string
     {
         return $this->defaultModel;
     }
@@ -156,7 +150,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  \Joomla\Http\Http
      * @since   __DEPLOY_VERSION__
      */
-    protected function getHttpClient()
+    protected function getHttpClient(): Http
     {
         $httpOptions = (array) $this->getOption('http_options', []);
 
@@ -278,7 +272,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @throws  AuthenticationException|RateLimitException|QuotaExceededException|ProviderException
      * @since   __DEPLOY_VERSION__
      */
-    protected function sendRequest(string $method, string $url, callable $send)
+    protected function sendRequest(string $method, string $url, callable $send): HttpResponse
     {
         $request = ['provider' => $this->getName(), 'method' => $method, 'url' => $url, 'stream' => false];
         $maxRetries = $this->getMaxRetries();
@@ -374,7 +368,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @since   __DEPLOY_VERSION__
      */
-    private function dispatchHook(string $event, ...$arguments): void
+    private function dispatchHook(string $event, mixed ...$arguments): void
     {
         $callbacks = array_merge((array) ($this->getOption('hooks', [])[$event] ?? []), $this->hooks[$event] ?? []);
 
@@ -391,7 +385,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
         $this->dispatchHook('before_request', $request);
     }
 
-    private function afterResponse(array $request, $response, float $seconds): void
+    private function afterResponse(array $request, HttpResponse $response, float $seconds): void
     {
         $this->getLogger()->info('{provider} {method} {url} returned {status} in {seconds}s', $request + [
             'status' => $response->getStatusCode(),
@@ -400,7 +394,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
         $this->dispatchHook('after_response', $request, $response, $seconds);
     }
 
-    private function retryAfter(array $request, float $delay, $reason): void
+    private function retryAfter(array $request, float $delay, HttpResponse|\Throwable $reason): void
     {
         $this->getLogger()->warning('{provider} {method} {url} failed ({reason}), retrying in {delay}s', $request + [
             'reason' => $reason instanceof \Throwable ? $reason->getMessage() : 'HTTP ' . $reason->getStatusCode(),
@@ -424,7 +418,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @since   __DEPLOY_VERSION__
      */
-    private function validateWithHooks(array $request, $response): void
+    private function validateWithHooks(array $request, HttpResponse $response): void
     {
         try {
             $this->validateResponse($response);
@@ -454,7 +448,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  bool
      * @since   __DEPLOY_VERSION__
      */
-    protected function isRetryableResponse($response): bool
+    protected function isRetryableResponse(HttpResponse $response): bool
     {
         $status = $response->getStatusCode();
 
@@ -474,7 +468,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  float
      * @since   __DEPLOY_VERSION__
      */
-    protected function getRetryDelay($response, int $attempt): float
+    protected function getRetryDelay(HttpResponse $response, int $attempt): float
     {
         $maxDelay = (float) $this->getOption('retry_max_delay', 60);
 
@@ -533,7 +527,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  string
      * @since   __DEPLOY_VERSION__
      */
-    private function getErrorMessage($response): string
+    private function getErrorMessage(HttpResponse $response): string
     {
         $body = (string) $response->getBody();
         $response->getBody()->rewind();
@@ -689,9 +683,9 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @return  \Joomla\Http\Response
      * @throws  \Exception
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    protected function makeGetRequest(string $url, array $headers = [], $timeout = null)
+    protected function makeGetRequest(string $url, array $headers = [], ?int $timeout = null): HttpResponse
     {
         return $this->sendRequest('GET', $url, fn () => $this->getHttpClient()->get($url, $headers, $timeout));
     }
@@ -706,9 +700,9 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @return  \Joomla\Http\Response
      * @throws  \Exception
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    protected function makePostRequest(string $url, $data, array $headers = [], $timeout = null)
+    protected function makePostRequest(string $url, mixed $data, array $headers = [], ?int $timeout = null): HttpResponse
     {
         return $this->sendRequest('POST', $url, fn () => $this->getHttpClient()->post($url, $data, $headers, $timeout));
     }
@@ -723,9 +717,9 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @return  \Joomla\Http\Response
      * @throws  \Exception
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    protected function makeDeleteRequest(string $url, $data, array $headers = [], $timeout = null)
+    protected function makeDeleteRequest(string $url, mixed $data, array $headers = [], ?int $timeout = null): HttpResponse
     {
         return $this->sendRequest('DELETE', $url, fn () => $this->getHttpClient()->delete($url, $headers, $timeout, $data));
     }
@@ -739,7 +733,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  \Joomla\Http\Response
      * @since   __DEPLOY_VERSION__
      */
-    protected function makeMultipartPostRequest(string $url, array $data, array $headers): \Joomla\Http\Response
+    protected function makeMultipartPostRequest(string $url, array $data, array $headers): HttpResponse
     {
         $boundary = '----aiframeworkjoomla-boundary-' . uniqid();
         $postData = '';
@@ -1066,7 +1060,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  string
      * @since   __DEPLOY_VERSION__
      */
-    protected function encodeToolResult($result): string
+    protected function encodeToolResult(mixed $result): string
     {
         return is_string($result) ? $result : (string) json_encode($result);
     }
@@ -1176,7 +1170,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  mixed
      * @since   __DEPLOY_VERSION__
      */
-    protected function getCapability(string $key, ?string $model = null, $default = null)
+    protected function getCapability(string $key, ?string $model = null, mixed $default = null): mixed
     {
         $value = $this->getCapabilities()[$key] ?? null;
 
@@ -1194,9 +1188,9 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @return  boolean  True if successful
      * @throws  \Exception
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
-    protected function validateResponse($response): bool
+    protected function validateResponse(HttpResponse $response): bool
     {
         if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
             $responseBody = $response->getBody();
@@ -1240,7 +1234,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      *
      * @return  array  The parsed JSON data
      * @throws  UnserializableResponseException  If JSON parsing fails
-     * @since  ___DEPLOY_VERSION___
+     * @since  __DEPLOY_VERSION__
      */
     protected function parseJsonResponse(string $jsonString): array
     {
@@ -1267,7 +1261,7 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @return  bool
      * @since   __DEPLOY_VERSION__
      */
-    protected function moderateInput($input, array $options = []): bool
+    protected function moderateInput(string|array $input, array $options = []): bool
     {
         // Check if the provider supports moderation and it is enabled
         if (!($this instanceof ModerationInterface) || !$this->getOption('moderate_input', true)) {
