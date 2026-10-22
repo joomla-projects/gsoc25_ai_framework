@@ -26,6 +26,14 @@ use Joomla\Http\HttpFactory;
 class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface
 {
     /**
+     * Default model used when none is configured
+     *
+     * @var    string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const DEFAULT_MODEL = 'claude-opus-5-5';
+
+    /**
      * Custom base URL for API requests
      *
      * @var    string
@@ -192,7 +200,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildChatRequestPayload(string $message, array $options = []): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'claude-3-haiku-20240307');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL);
         $maxTokens = $options['max_tokens'] ?? 1024;
 
         $messages = $options['messages'] ?? [
@@ -207,6 +215,40 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'messages' => $messages,
             'max_tokens' => $maxTokens
         ];
+
+        return $this->addOptionalParameters($payload, $options);
+    }
+
+    /**
+     * Add optional sampling and prompt parameters to a request payload.
+     *
+     * @param   array  $payload  The request payload
+     * @param   array  $options  Additional options
+     *
+     * @return  array  The request payload with optional parameters applied
+     * @since  __DEPLOY_VERSION__
+     */
+    private function addOptionalParameters(array $payload, array $options): array
+    {
+        if (isset($options['temperature'])) {
+            $payload['temperature'] = (float) $options['temperature'];
+        }
+
+        if (isset($options['top_k'])) {
+            $payload['top_k'] = (int) $options['top_k'];
+        }
+
+        if (isset($options['top_p'])) {
+            $payload['top_p'] = (float) $options['top_p'];
+        }
+
+        if (isset($options['stop_sequences'])) {
+            $payload['stop_sequences'] = $options['stop_sequences'];
+        }
+
+        if (isset($options['system'])) {
+            $payload['system'] = $options['system'];
+        }
 
         return $payload;
     }
@@ -224,7 +266,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
     {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'claude-3-haiku-20240307');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL);
         $maxTokens = $options['max_tokens'] ?? 1024;
 
         // Determine image format and validate
@@ -251,28 +293,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'max_tokens' => $maxTokens
         ];
 
-        // Add optional parameters
-        if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['top_k'])) {
-            $payload['top_k'] = (int) $options['top_k'];
-        }
-
-        if (isset($options['top_p'])) {
-            $payload['top_p'] = (float) $options['top_p'];
-        }
-
-        if (isset($options['stop_sequences'])) {
-            $payload['stop_sequences'] = $options['stop_sequences'];
-        }
-
-        if (isset($options['system'])) {
-            $payload['system'] = $options['system'];
-        }
-
-        return $payload;
+        return $this->addOptionalParameters($payload, $options);
     }
 
     /**
