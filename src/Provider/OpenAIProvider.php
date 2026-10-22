@@ -40,86 +40,6 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     private $baseUrl;
 
     /**
-     * Models that support chat capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const CHAT_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
-
-    /**
-     * Models that support vision capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const VISION_MODELS = ['gpt-4o', 'gpt-4o-mini'];
-
-    /**
-     * Models that support image generation capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_MODELS = ['dall-e-2', 'dall-e-3', 'gpt-image-1'];
-
-    /**
-     * Models that support text-to-speech (TTS) capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TTS_MODELS = ['gpt-4o-mini-tts',  'tts-1', 'tts-1-hd'];
-
-    /**
-     * Models that support text embeddings creating capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const EMBEDDING_MODELS = ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'];
-
-    /**
-     * Models that support audio transcription.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TRANSCRIPTION_MODELS = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'];
-
-    /**
-     * Models that support content moderation.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const MODERATION_MODELS = ['omni-moderation-latest', 'text-moderation-007'];
-
-    /**
-     * Available voices for text-to-speech.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
-
-    /**
-     * Supported audio formats for OpenAI TTS.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const AUDIO_FORMATS = ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'];
-
-    /**
-     * Supported input formats for transcription.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
-
-    /**
      * Constructor.
      *
      * @param   array|\ArrayAccess  $options     Provider options array.
@@ -136,6 +56,102 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         // Remove trailing slash if present
         if (substr($this->baseUrl, -1) === '/') {
             $this->baseUrl = rtrim($this->baseUrl, '/');
+        }
+    }
+
+    /**
+     * Get the default capability map for OpenAI.
+     * Override via the "capabilities" provider option or in a subclass.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getDefaultCapabilities(): array
+    {
+        return [
+            // Models per capability
+            'models' => [
+                'chat'            => ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+                'vision'          => ['gpt-4o', 'gpt-4o-mini'],
+                'image'           => ['dall-e-2', 'dall-e-3', 'gpt-image-1'],
+                'image-edit'      => ['dall-e-2', 'gpt-image-1'],
+                'image-variation' => ['dall-e-2'],
+                'text-to-speech'  => ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
+                'transcription'   => ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'],
+                'translation'     => ['whisper-1'],
+                'embedding'       => ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'],
+                'moderation'      => ['omni-moderation-latest', 'text-moderation-007'],
+            ],
+
+            // Allowed values
+            'voices'                      => ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'],
+            'audio_formats'               => ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+            'transcription_input_formats' => ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'],
+
+            // Per-model image limits (models without an entry are not validated client-side)
+            'image_sizes' => [
+                'gpt-image-1' => ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+                'dall-e-2'    => ['256x256', '512x512', '1024x1024'],
+                'dall-e-3'    => ['1024x1024', '1792x1024', '1024x1792'],
+            ],
+            'image_qualities' => [
+                'gpt-image-1' => ['auto', 'high', 'medium', 'low'],
+                'dall-e-2'    => ['standard'],
+                'dall-e-3'    => ['auto', 'hd', 'standard'],
+            ],
+            'image_prompt_max_length' => [
+                'gpt-image-1' => 32000,
+                'dall-e-2'    => 1000,
+                'dall-e-3'    => 4000,
+            ],
+            'image_file_max_mb' => [
+                'gpt-image-1' => 50,
+                'dall-e-2'    => 4,
+            ],
+
+            // Embedding models that accept "dimensions", with their maximum
+            'embedding_max_dimensions' => [
+                'text-embedding-3-large' => 3072,
+                'text-embedding-3-small' => 1536,
+            ],
+
+            // Global limits
+            'image_edit_max_images'  => 16,
+            'mask_file_max_mb'       => 4,
+            'speech_max_length'      => 4096,
+            'audio_file_max_mb'      => 25,
+        ];
+    }
+
+    /**
+     * Get the models listed for a capability.
+     *
+     * @param   string  $capability  The capability (chat, vision, image, ...)
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getCapabilityModels(string $capability): array
+    {
+        return $this->getCapability('models', $capability, []);
+    }
+
+    /**
+     * Throw if the model is not listed for the capability.
+     *
+     * @param   string  $model       The model name
+     * @param   string  $capability  The capability key in the "models" map
+     * @param   string  $label       Human readable capability name for the error
+     *
+     * @throws  InvalidArgumentException
+     * @since   __DEPLOY_VERSION__
+     */
+    private function assertModelCapable(string $model, string $capability, string $label): void
+    {
+        $models = $this->getCapabilityModels($capability);
+
+        if (!in_array($model, $models, true)) {
+            throw InvalidArgumentException::invalidModel($model, 'openai', $models, $label);
         }
     }
 
@@ -285,7 +301,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getChatModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::CHAT_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('chat'));
     }
 
     /**
@@ -297,7 +313,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getVisionModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::VISION_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('vision'));
     }
 
     /**
@@ -309,7 +325,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getImageModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::IMAGE_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('image'));
     }
 
     /**
@@ -321,7 +337,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getTTSModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::TTS_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('text-to-speech'));
     }
 
     /**
@@ -332,7 +348,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getTranscriptionModels(): array
     {
-        return self::TRANSCRIPTION_MODELS;
+        return $this->getCapabilityModels('transcription');
     }
 
     /**
@@ -343,7 +359,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getEmbeddingModels(): array
     {
-        return self::EMBEDDING_MODELS;
+        return $this->getCapabilityModels('embedding');
     }
 
     /**
@@ -354,7 +370,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getAvailableVoices(): array
     {
-        return self::VOICES;
+        return $this->getCapability('voices', null, []);
     }
 
     /**
@@ -365,7 +381,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getSupportedAudioFormats(): array
     {
-        return self::AUDIO_FORMATS;
+        return $this->getCapability('audio_formats', null, []);
     }
 
     /**
@@ -376,7 +392,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getSupportedTranscriptionFormats(): array
     {
-        return self::TRANSCRIPTION_INPUT_FORMATS;
+        return $this->getCapability('transcription_input_formats', null, []);
     }
 
     /**
@@ -404,15 +420,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function isModelCapable(string $model, string $capability): bool
     {
-        $capabilityMap = [
-            'chat' => self::CHAT_MODELS,
-            'vision' => self::VISION_MODELS,
-            'image' => self::IMAGE_MODELS,
-            'text-to-speech' => self::TTS_MODELS,
-            'transcription' => self::TRANSCRIPTION_MODELS,
-            'embedding' => self::EMBEDDING_MODELS,
-        ];
-        return $this->checkModelCapability($model, $capability, $capabilityMap);
+        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
     }
 
     /**
@@ -693,9 +701,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? 'omni-moderation-latest';
 
-        if (!in_array($model, self::MODERATION_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::MODERATION_MODELS, 'moderation');
-        }
+        $this->assertModelCapable($model, 'moderation', 'moderation');
 
         $payload = [
             'input' => $input,
@@ -859,9 +865,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
 
-        if (!$this->isModelCapable($model, $capability)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::VISION_MODELS, $capability);
-        }
+        $this->assertModelCapable($model, $capability, $capability);
 
         $content = [
             [
@@ -915,9 +919,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'dall-e-2');
 
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::IMAGE_MODELS, 'image generation');
-        }
+        $this->assertModelCapable($model, 'image', 'image generation');
 
         $this->validateImagePrompt($prompt, $model);
 
@@ -1024,10 +1026,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? 'dall-e-2';
 
-        // Only dall-e-2 supports variations
-        if ($model !== 'dall-e-2') {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2'], 'image variation');
-        }
+        $this->assertModelCapable($model, 'image-variation', 'image variation');
 
         $this->validateImageFile($imagePath, $model, 'variation');
 
@@ -1045,10 +1044,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         if (isset($options['size'])) {
-            $validSizes = ['256x256', '512x512', '1024x1024'];
-            if (!in_array($options['size'], $validSizes)) {
-                throw InvalidArgumentException::invalidParameter('size', $options['size'], 'openai', 'Size must be one of: ' . implode(', ', $validSizes), ['valid_values' => $validSizes]);
-            }
+            $this->validateImageSize($options['size'], $model, 'variation');
             $payload['size'] = $options['size'];
         }
 
@@ -1085,10 +1081,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ??  $this->getOption('model', 'dall-e-2');
 
-        // Only dall-e-2 and gpt-image-1 support image editing
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2', 'gpt-image-1'], 'image editing');
-        }
+        $this->assertModelCapable($model, 'image-edit', 'image editing');
 
         $this->validateImageEditInputs($images, $prompt, $model, $options);
 
@@ -1202,18 +1195,18 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $voice = $options['voice'] ?? $this->getOption('voice', 'alloy');
 
         // Validate model
-        if (!in_array($model, self::TTS_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::TTS_MODELS, 'text-to-speech');
-        }
+        $this->assertModelCapable($model, 'text-to-speech', 'text-to-speech');
 
         // Validate voice
-        if (!in_array($voice, self::VOICES)) {
-            throw InvalidArgumentException::invalidVoice($voice, self::VOICES, 'openai');
+        $voices = $this->getCapability('voices', null, []);
+        if (!in_array($voice, $voices)) {
+            throw InvalidArgumentException::invalidVoice($voice, $voices, 'openai');
         }
 
         // Validate input text
-        if (strlen($text) > 4096) {
-            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', 'Speech input text cannot exceed 4096 characters, got: ' . strlen($text) . ' characters.', ['max_length' => 4096, 'actual_length' => strlen($text)]);
+        $maxLength = $this->getCapability('speech_max_length');
+        if ($maxLength !== null && strlen($text) > $maxLength) {
+            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', "Speech input text cannot exceed $maxLength characters, got: " . strlen($text) . ' characters.', ['max_length' => $maxLength, 'actual_length' => strlen($text)]);
         }
 
         $payload = [
@@ -1223,8 +1216,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         ];
 
         $responseFormat = $options['response_format'] ?? 'mp3';
-        if (!in_array($responseFormat, self::AUDIO_FORMATS)) {
-            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', 'Audio response format must be one of: ' . implode(', ', self::AUDIO_FORMATS), ['valid_formats' => self::AUDIO_FORMATS]);
+        $audioFormats = $this->getCapability('audio_formats', null, []);
+        if (!in_array($responseFormat, $audioFormats)) {
+            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', 'Audio response format must be one of: ' . implode(', ', $audioFormats), ['valid_formats' => $audioFormats]);
         }
         $payload['response_format'] = $responseFormat;
 
@@ -1277,9 +1271,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-transcribe');
 
         // Validate model
-        if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::TRANSCRIPTION_MODELS, 'transcription');
-        }
+        $this->assertModelCapable($model, 'transcription', 'transcription');
 
         $payload = [
             'model' => $model,
@@ -1386,9 +1378,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'whisper-1');
 
         // Validate model
-        if ($model !== 'whisper-1') {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['whisper-1'], 'translation');
-        }
+        $this->assertModelCapable($model, 'translation', 'translation');
 
         $payload = [
             'model' => $model,
@@ -1433,9 +1423,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     private function buildEmbeddingPayload($input, string $model, array $options): array
     {
         // Validate model
-        if (!in_array($model, self::EMBEDDING_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::EMBEDDING_MODELS, 'embedding');
-        }
+        $this->assertModelCapable($model, 'embedding', 'embedding');
 
         $payload = [
             'input' => $input,
@@ -1449,12 +1437,13 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $payload['encoding_format'] = $encodingFormat;
 
         if (isset($options['dimensions'])) {
-            if (!in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
-                throw InvalidArgumentException::invalidParameter('dimensions', $options['dimensions'], 'openai', "Dimensions parameter is only supported for text-embedding-3-large and text-embedding-3-small models.");
+            $maxDimensionsMap = $this->getCapability('embedding_max_dimensions', null, []);
+            if (!isset($maxDimensionsMap[$model])) {
+                throw InvalidArgumentException::invalidParameter('dimensions', $options['dimensions'], 'openai', 'Dimensions parameter is only supported for ' . implode(', ', array_keys($maxDimensionsMap)) . ' models.');
             }
 
             $dimensions = (int) $options['dimensions'];
-            $maxDimensions = $model === 'text-embedding-3-large' ? 3072 : 1536;
+            $maxDimensions = $maxDimensionsMap[$model];
 
             if ($dimensions < 1 || $dimensions > $maxDimensions) {
                 throw InvalidArgumentException::invalidParameter('dimensions', $dimensions, 'openai', "Dimensions must be between 1 and $maxDimensions for $model.");
@@ -1889,16 +1878,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImagePrompt(string $prompt, string $model): void
     {
-        // Max lengths per model
-        $maxLengths = [
-            'gpt-image-1' => 32000,
-            'dall-e-2' => 1000,
-            'dall-e-3' => 4000
-        ];
+        $maxLength = $this->getCapability('image_prompt_max_length', $model);
 
         // Validate prompt length
-        if (isset($maxLengths[$model]) && strlen(trim($prompt)) > $maxLengths[$model]) {
-            throw InvalidArgumentException::invalidParameter('prompt', $prompt, 'openai', "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ({$maxLengths[$model]} characters)");
+        if ($maxLength !== null && strlen(trim($prompt)) > $maxLength) {
+            throw InvalidArgumentException::invalidParameter('prompt', $prompt, 'openai', "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ($maxLength characters)");
         }
     }
 
@@ -1925,8 +1909,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                 throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Multiple images only supported with gpt-image-1 model.');
             }
 
-            if (count($images) > 16) {
-                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Maximum 16 images allowed for gpt-image-1.');
+            $maxImages = $this->getCapability('image_edit_max_images');
+            if ($maxImages !== null && count($images) > $maxImages) {
+                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', "Maximum $maxImages images allowed for gpt-image-1.");
             }
 
             foreach ($images as $imagePath) {
@@ -1955,23 +1940,20 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $fileInfo = pathinfo($imagePath);
         $extension = strtolower($fileInfo['extension'] ?? '');
 
+        $maxMb = $this->getCapability('image_file_max_mb', $model);
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, $maxMb, $model, 'openai');
+        }
+
         if ($model === 'gpt-image-1') {
-            // gpt-image-1 supports png, webp, jpg, max 50MB
+            // gpt-image-1 supports png, webp, jpg
             if (!in_array($extension, ['png', 'webp', 'jpg', 'jpeg'])) {
                 throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For gpt-image-1, image must be png, webp, or jpg. Got: $extension");
             }
-
-            if ($fileSize > 50 * 1024 * 1024) { // 50MB
-                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 50, $model, 'openai');
-            }
         } elseif ($model === 'dall-e-2') {
-            // dall-e-2 requires square PNG, max 4MB
+            // dall-e-2 requires square PNG
             if ($extension !== 'png') {
                 throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For dall-e-2, image must be a PNG file. Got: $extension");
-            }
-
-            if ($fileSize > 4 * 1024 * 1024) { // 4MB
-                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 4, $model, 'openai');
             }
 
             // Check if image is square (for variations)
@@ -2009,8 +1991,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw InvalidArgumentException::invalidFileFormat($maskPath, $extension, ['png'], 'openai');
         }
 
-        if ($fileSize > 4 * 1024 * 1024) { // 4MB
-            throw InvalidArgumentException::fileSizeExceeded($maskPath, $fileSize, 4, 'openai');
+        $maxMb = $this->getCapability('mask_file_max_mb');
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($maskPath, $fileSize, $maxMb, 'openai');
         }
     }
 
@@ -2026,23 +2009,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImageSize(string $size, string $model, string $operation): void
     {
-        $validSizes = [];
+        $validSizes = $this->getCapability('image_sizes', $model);
 
-        switch ($model) {
-            case 'gpt-image-1':
-                $validSizes = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
-                break;
-
-            case 'dall-e-2':
-                $validSizes = ['256x256', '512x512', '1024x1024'];
-                break;
-
-            case 'dall-e-3':
-                $validSizes = ['1024x1024', '1792x1024', '1024x1792'];
-                break;
-        }
-
-        if (!in_array($size, $validSizes)) {
+        if ($validSizes !== null && !in_array($size, $validSizes)) {
             throw InvalidArgumentException::invalidImageSize($size, $validSizes, $model, $operation);
         }
     }
@@ -2058,23 +2027,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImageQuality(string $quality, string $model): void
     {
-        $validQualities = [];
+        $validQualities = $this->getCapability('image_qualities', $model);
 
-        switch ($model) {
-            case 'gpt-image-1':
-                $validQualities = ['auto', 'high', 'medium', 'low'];
-                break;
-
-            case 'dall-e-2':
-                $validQualities = ['standard'];
-                break;
-
-            case 'dall-e-3':
-                $validQualities = ['auto', 'hd', 'standard'];
-                break;
-        }
-
-        if (!in_array($quality, $validQualities)) {
+        if ($validQualities !== null && !in_array($quality, $validQualities)) {
             throw InvalidArgumentException::invalidParameter('quality', $quality, 'openai', 'Valid qualities: ' . implode(', ', $validQualities) . ' for model: ' . $model);
         }
     }
@@ -2102,14 +2057,16 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $fileInfo = pathinfo($audioFile);
         $extension = strtolower($fileInfo['extension'] ?? '');
 
-        if (!in_array($extension, self::TRANSCRIPTION_INPUT_FORMATS)) {
-            throw InvalidArgumentException::invalidFileFormat($audioFile, $extension, self::TRANSCRIPTION_INPUT_FORMATS, 'openai');
+        $inputFormats = $this->getCapability('transcription_input_formats', null, []);
+        if (!in_array($extension, $inputFormats)) {
+            throw InvalidArgumentException::invalidFileFormat($audioFile, $extension, $inputFormats, 'openai');
         }
 
-        // Check file size (OpenAI has a 25MB limit for audio files)
+        // Check file size
         $fileSize = filesize($audioFile);
-        if ($fileSize > 25 * 1024 * 1024) { // 25MB
-            throw InvalidArgumentException::fileSizeExceeded($audioFile, $fileSize, 25, 'openai');
+        $maxMb = $this->getCapability('audio_file_max_mb');
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($audioFile, $fileSize, $maxMb, 'openai');
         }
     }
 

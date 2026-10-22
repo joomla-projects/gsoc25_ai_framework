@@ -50,6 +50,14 @@ abstract class AbstractProvider implements ProviderInterface
     protected $defaultModel = null;
 
     /**
+     * Resolved capability map (defaults merged with the "capabilities" option).
+     *
+     * @var    array|null
+     * @since  __DEPLOY_VERSION__
+     */
+    private $capabilities = null;
+
+    /**
      * Constructor.
      *
      * @param   mixed         $options      Provider options array.
@@ -416,6 +424,68 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         return $this->isModelAvailable($model, $capabilityMap[$capability]);
+    }
+
+    /**
+     * Get the provider's default capability map (models per capability, limits, allowed values).
+     * Providers override this; users can extend or replace entries with the "capabilities" option.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getDefaultCapabilities(): array
+    {
+        return [];
+    }
+
+    /**
+     * Get the capability map, with the "capabilities" provider option applied on top of the defaults.
+     * Keyed maps (e.g. per-model limits) are merged one level deep; lists and scalars are replaced.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getCapabilities(): array
+    {
+        if ($this->capabilities === null) {
+            $capabilities = $this->getDefaultCapabilities();
+
+            foreach ((array) $this->getOption('capabilities', []) as $key => $value) {
+                if (
+                    is_array($value) && !array_is_list($value)
+                    && isset($capabilities[$key]) && is_array($capabilities[$key]) && !array_is_list($capabilities[$key])
+                ) {
+                    $capabilities[$key] = array_replace($capabilities[$key], $value);
+                } else {
+                    $capabilities[$key] = $value;
+                }
+            }
+
+            $this->capabilities = $capabilities;
+        }
+
+        return $this->capabilities;
+    }
+
+    /**
+     * Get a single capability entry, optionally for a specific model.
+     *
+     * @param   string       $key      The capability key
+     * @param   string|null  $model    Model name for per-model entries
+     * @param   mixed        $default  Value returned when the entry is not defined
+     *
+     * @return  mixed
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getCapability(string $key, ?string $model = null, $default = null)
+    {
+        $value = $this->getCapabilities()[$key] ?? null;
+
+        if ($model !== null) {
+            $value = is_array($value) ? ($value[$model] ?? null) : null;
+        }
+
+        return $value ?? $default;
     }
 
     /**

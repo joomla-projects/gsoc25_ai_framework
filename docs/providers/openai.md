@@ -338,6 +338,24 @@ try {
 
 ## Important Constraints
 
+The model lists and limits below live in one capability map (`OpenAIProvider::getDefaultCapabilities()`). To allow a new model or change a limit without waiting for a release, pass a `capabilities` option. Keyed maps (per-model limits, the `models` map) are merged, lists and scalars are replaced. Size, quality, prompt-length and file-size checks are skipped for models with no entry.
+
+```php
+$openai = AIFactory::getAI('openai', [
+    'api_key' => getenv('OPENAI_API_KEY'),
+    'capabilities' => [
+        'models' => [
+            'chat'   => ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+            'vision' => ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+        ],
+        'image_sizes' => ['gpt-image-1' => ['1024x1024', 'auto']],
+        'audio_file_max_mb' => 25,
+    ],
+]);
+```
+
+You can also subclass the provider and override `getDefaultCapabilities()`.
+
 ### Model-Specific Limitations
 
 **DALL-E 2:**
