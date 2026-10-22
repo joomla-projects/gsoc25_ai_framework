@@ -14,6 +14,8 @@ use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
+use Joomla\AI\Exception\LimitExceededException;
+use Joomla\AI\Limit\Limit;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
 use Joomla\AI\Exception\QuotaExceededException;
@@ -73,6 +75,14 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
      * @since  __DEPLOY_VERSION__
      */
     private array $hooks = [];
+
+    /**
+     * Limits added with addLimit()
+     *
+     * @var    Limit[]
+     * @since  __DEPLOY_VERSION__
+     */
+    private array $limits = [];
 
     /**
      * Resolved capability map (defaults merged with the "capabilities" option).
@@ -201,6 +211,8 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
         $request = ['provider' => $this->getName(), 'method' => 'POST', 'url' => $url, 'stream' => true];
         $maxRetries = $this->getMaxRetries();
 
+        $this->checkLimits($request);
+
         for ($attempt = 0;; $attempt++) {
             $request['attempt'] = $attempt;
             $this->beforeRequest($request);
@@ -277,6 +289,8 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
         $request = ['provider' => $this->getName(), 'method' => $method, 'url' => $url, 'stream' => false];
         $maxRetries = $this->getMaxRetries();
 
+        $this->checkLimits($request);
+
         for ($attempt = 0;; $attempt++) {
             $request['attempt'] = $attempt;
             $this->beforeRequest($request);
@@ -306,6 +320,76 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
 
             return $response;
         }
+    }
+
+    /**
+     * Add a usage limit. Limits can also be passed as the "limits" option, and one limit
+     * instance can be shared by several providers to limit them together.
+     *
+     * @param   Limit  $limit  The limit
+     *
+     * @return  $this
+     * @since   __DEPLOY_VERSION__
+     */
+    public function addLimit(Limit $limit): static
+    {
+        $this->limits[] = $limit;
+
+        return $this;
+    }
+
+    /**
+     * Get all limits for this provider.
+     *
+     * @return  Limit[]
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getLimits(): array
+    {
+        $fromOptions = array_filter((array) $this->getOption('limits', []), fn ($limit): bool => $limit instanceof Limit);
+
+        return array_merge(array_values($fromOptions), $this->limits);
+    }
+
+    /**
+     * Check the limits before a request is sent (retries are not checked again).
+     *
+     * @param   array  $request  Request information
+     *
+     * @throws  LimitExceededException
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function checkLimits(array $request): void
+    {
+        foreach ($this->getLimits() as $limit) {
+            try {
+                $limit->check($request);
+            } catch (LimitExceededException $e) {
+                $this->getLogger()->warning('{provider} {method} {url} blocked: {error}', $request + ['error' => $e->getMessage()]);
+                $this->dispatchHook('on_error', $request, $e);
+
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * Record a model response against the limits, then return it unchanged.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function recordResponse(Response $response): Response
+    {
+        $request = ['provider' => $this->getName(), 'model' => $response->getMetadata()['model'] ?? null];
+
+        foreach ($this->getLimits() as $limit) {
+            $limit->record($request, $response);
+        }
+
+        return $response;
     }
 
     /**

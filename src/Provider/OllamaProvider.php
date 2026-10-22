@@ -543,6 +543,15 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $payload['stream'] = (bool) $options['stream'];
         }
 
+        // Model parameters (temperature, top_p, num_predict, seed, ...) go in "options", as for generate()
+        if (isset($options['options']) && is_array($options['options'])) {
+            $payload['options'] = $options['options'];
+        }
+
+        if (isset($options['keep_alive'])) {
+            $payload['keep_alive'] = $options['keep_alive'];
+        }
+
         $tools = $this->getToolDefinitions($options);
 
         if ($tools !== []) {
@@ -743,7 +752,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             'prompt_eval_count' => $data['prompt_eval_count'] ?? 0
         ] + $this->normaliseUsage($data['prompt_eval_count'] ?? null, null);
 
-        return new Response($content, $this->getName(), $metadata, 200);
+        return $this->recordResponse(new Response($content, $this->getName(), $metadata, 200));
     }
 
     /**
@@ -993,12 +1002,12 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $statusCode = isset($lastMetadata['done_reason']) ? $this->determineAIStatusCode($lastMetadata) : 200;
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $fullContent,
             $this->getName(),
             $lastMetadata,
             $statusCode
-        );
+        ));
     }
 
     /**
@@ -1073,12 +1082,12 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata['context'] = $data['context'];
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
-        );
+        ));
     }
 
     private function determineAIStatusCode(array $data): int

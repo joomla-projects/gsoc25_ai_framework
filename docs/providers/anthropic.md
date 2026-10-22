@@ -10,6 +10,8 @@ The Anthropic Provider ([`AnthropicProvider`](../../src/Provider/AnthropicProvid
 | **Vision** | Image analysis and description using Claude's vision capabilities |
 | **Model Management** | List available models and retrieve model information |
 
+Streaming, tool calling, JSON schema output, conversations and limits are described in [Features](../features.md).
+
 ## Configuration
 
 ```php
@@ -50,6 +52,8 @@ echo "Finish reason: " . $response->getFinishReason() . "\n";
 `temperature`, `top_p` and `top_k` are passed through when set, but current Claude models (e.g. `claude-opus-5-5`, `claude-sonnet-5-5`) reject non-default sampling values with a 400 error. Steer the output with `system` instead.
 
 ### Message History
+Pass the history yourself, or use a [conversation](../features.md#conversations) to keep it for you. When you pass it yourself, send earlier assistant turns back exactly as returned: `buildAssistantMessage($response)` gives the right format, thinking blocks included.
+
 ```php
 $response = $anthropic->chat("", [
     'messages' => [
@@ -100,49 +104,29 @@ $models = $anthropic->getAvailableModels();
 echo "Available Models: " . implode(', ', $models) . "\n";
 ```
 
-## Default Model Management
-
-Set defaults for consistent model usage:
-
-```php
-// Set a default model
-$anthropic->setDefaultModel('claude-sonnet-5-5');
-
-// These will use the default
-$chat1 = $anthropic->chat("What is web accessibility?");
-$vision1 = $anthropic->vision("Describe this image", $imageUrl);
-
-// Override for specific calls
-$detailed = $anthropic->chat("Provide a comprehensive analysis", [
-    'model' => 'claude-opus-5-5',
-    'max_tokens' => 2000
-]);
-
-// Clear the default
-$anthropic->unsetDefaultModel();
-```
-
 ## Error Handling
 
-Anthropic-specific error patterns:
+Invalid requests are rejected by the API and arrive as a `ProviderException` with the API's message:
 
 ```php
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
-use Joomla\AI\Exception\InvalidArgumentException;
 
 try {
     $response = $anthropic->chat("Hello", [
-        'max_tokens' => 500000 // Exceeds model limit
+        'max_tokens' => 500000 // more than the model allows
     ]);
-} catch (InvalidArgumentException $e) {
-    echo "Parameter error: " . $e->getMessage();
 } catch (AuthenticationException $e) {
     echo "Authentication failed: Check your API key";
 } catch (RateLimitException $e) {
     echo "Rate limited: " . $e->getMessage();
+} catch (ProviderException $e) {
+    echo "Request rejected (HTTP " . $e->getHttpStatusCode() . "): " . $e->getMessage();
 }
 ```
+
+Overloaded (529) and other temporary errors are [retried](../features.md#retries) before an exception is thrown.
 
 ## Next Steps
 

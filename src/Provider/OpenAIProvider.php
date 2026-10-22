@@ -522,12 +522,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'stream' => true,
         ] + $this->normaliseOpenAIUsage($usage);
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $this->determineAIStatusCode(['choices' => [['finish_reason' => $finishReason]]])
-        );
+        ));
     }
 
     /**
@@ -1763,12 +1763,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'tool_calls' => $this->extractToolCalls((array) ($data['choices'][0]['message'] ?? []), $responseBody)
         ] + $this->normaliseOpenAIUsage($usage);
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
-        );
+        ));
     }
 
     /**
@@ -1878,12 +1878,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -1922,12 +1922,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata['instructions'] = $payload['instructions'];
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $responseBody, // Binary audio data
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -2014,12 +2014,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                 throw new ProviderException($this->getName(), ['error' => 'Unsupported response format: ' . $responseFormat]);
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -2077,12 +2077,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata['requested_dimensions'] = $payload['dimensions'];
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**

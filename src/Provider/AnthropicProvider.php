@@ -538,7 +538,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'stream' => true,
         ] + $this->normaliseUsage($usage['input_tokens'] ?? null, $usage['output_tokens'] ?? null);
 
-        return new Response($content, $this->getName(), $metadata, $this->determineAIStatusCode(['stop_reason' => $stopReason]));
+        return $this->recordResponse(new Response($content, $this->getName(), $metadata, $this->determineAIStatusCode(['stop_reason' => $stopReason])));
     }
 
     /**
@@ -626,12 +626,12 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             $data['usage']['output_tokens'] ?? null
         );
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
-        );
+        ));
     }
 
     /**

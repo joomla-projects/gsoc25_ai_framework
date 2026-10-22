@@ -18,6 +18,8 @@ The OpenAI Provider ([`OpenAIProvider`](../../src/Provider/OpenAIProvider.php)) 
 | **Embeddings** | Generate vector embeddings for text similarity and search |
 | **Moderation** | Content safety checking and flagging inappropriate content |
 
+Streaming, tool calling, JSON schema output, conversations and limits are described in [Features](../features.md).
+
 ## Configuration
 
 ```php
@@ -56,6 +58,8 @@ echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
 
 ### Message History
+Pass the history yourself, or use a [conversation](../features.md#conversations) to keep it for you.
+
 ```php
 $response = $openai->chat("", [
     'messages' => [
@@ -267,15 +271,14 @@ echo "English translation: " . $translation->getContent();
 
 ## Embeddings
 
-### Basic Embeddings
 ```php
-$embeddings = $openai->createEmbeddings(
+$vector = $openai->createEmbeddings(
     "Joomla is a content management system",
-    'text-embedding-3-small'
-);
+    'text-embedding-3-small',
+    ['dimensions' => 512] // optional, text-embedding-3 models only
+)->getEmbedding();
 
-$vectors = json_decode($embeddings->getContent());
-echo "Vector dimensions: " . count($vectors) . "\n";
+echo "Vector dimensions: " . count($vector) . "\n";
 ```
 
 ## Content Moderation
@@ -298,25 +301,6 @@ if ($openai->isContentFlagged($result)) {
 ```php
 $allModels = $openai->getAvailableModels();
 echo "Available models: " . implode(', ', $allModels) . "\n";
-```
-
-## Default Model Management
-
-Set defaults to avoid repeating model names:
-
-```php
-// Set defaults for different capabilities
-$openai->setDefaultModel('gpt-4o-mini');
-
-// All these use the default
-$chat = $openai->chat("Hello");
-$vision = $openai->vision("Describe this", $imageUrl);
-
-// Override for specific calls
-$premium = $openai->chat("Complex analysis", ['model' => 'gpt-4o']);
-
-// Clear defaults
-$openai->unsetDefaultModel();
 ```
 
 ## Error Handling
@@ -392,24 +376,17 @@ You can also subclass the provider and override `getDefaultCapabilities()`.
 
 ### Content Safety
 
-The framework automatically applies moderation to:
-- Chat messages (before sending)
-- Image generation prompts
-- TTS text input
-- Image editing prompts
+Before the API call, the framework sends these inputs to the moderation endpoint:
+- Chat and vision messages
+- Image generation and editing prompts
+- Text-to-speech text
+- Embedding input
 
-Content flagged by moderation will throw an `AIException` before the API call.
-
-To skip automatic moderation, set the `moderate_input` provider option to `false`:
+Flagged content throws an `AIException` and is not sent. Each check is an extra request. To skip automatic moderation, set the `moderate_input` provider option to `false`:
 
 ```php
-$openai = new OpenAIProvider(['api_key' => $apiKey, 'moderate_input' => false]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => $apiKey, 'moderate_input' => false]);
 ```
-
-## Best Practices
-
-1. **Use appropriate models**: Choose the right model for your use case (cost vs capability)
-2. **Handle rate limits**: Implement exponential backoff for production use
 
 ## Next Steps
 

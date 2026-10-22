@@ -31,7 +31,7 @@ class OllamaTest extends TestCase
             ],
         ]);
 
-        $response = $provider->chat('Hi', ['model' => 'llama3']);
+        $response = $provider->chat('Hi', ['model' => 'llama3', 'options' => ['temperature' => 0.1], 'keep_alive' => '5m']);
 
         $this->assertSame('Hello!', $response->getContent());
         $this->assertSame('stop', $response->getFinishReason());
@@ -41,6 +41,8 @@ class OllamaTest extends TestCase
         $sent = $this->sentJson(count($this->requests) - 1);
         $this->assertSame([['role' => 'user', 'content' => 'Hi']], $sent['messages']);
         $this->assertFalse($sent['stream']);
+        $this->assertSame(['temperature' => 0.1], $sent['options']);
+        $this->assertSame('5m', $sent['keep_alive']);
     }
 
     public function testGenerateReturnsResponseText(): void
