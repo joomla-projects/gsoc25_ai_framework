@@ -64,13 +64,14 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     /**
      * Check if Anthropic provider is supported/configured.
      *
-     * @return  boolean  True if API key is available
+     * The API key comes from the api_key option and is checked when a request is made.
+     *
+     * @return  boolean  Always true
      * @since  __DEPLOY_VERSION__
      */
     public static function isSupported(): bool
     {
-        return !empty($_ENV['ANTHROPIC_API_KEY']) ||
-               !empty(getenv('ANTHROPIC_API_KEY'));
+        return true;
     }
 
     /**
@@ -110,14 +111,12 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function getApiKey(): string
     {
-        $apiKey = $this->getOption('api_key') ??
-                  $_ENV['ANTHROPIC_API_KEY'] ??
-                  getenv('ANTHROPIC_API_KEY');
+        $apiKey = $this->getOption('api_key');
 
         if (empty($apiKey)) {
             throw new AuthenticationException(
                 $this->getName(),
-                ['message' => 'Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable or provide api_key option.'],
+                ['message' => 'Anthropic API key not configured. Provide the api_key option.'],
                 401
             );
         }
@@ -375,11 +374,13 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'role' => $data['role'],
             'type' => $data['type'],
             'usage' => $data['usage'] ?? [],
-            'input_tokens' => $data['usage']['input_tokens'] ?? 0,
-            'output_tokens' => $data['usage']['output_tokens'] ?? 0,
+            'finish_reason' => $this->normaliseFinishReason($data['stop_reason'] ?? null),
             'stop_reason' => $data['stop_reason'],
             'stop_sequence' => $data['stop_sequence']
-        ];
+        ] + $this->normaliseUsage(
+            $data['usage']['input_tokens'] ?? null,
+            $data['usage']['output_tokens'] ?? null
+        );
 
         return new Response(
             $content,
@@ -387,6 +388,25 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             $metadata,
             $statusCode
         );
+    }
+
+    /**
+     * Map Anthropic's stop_reason to the normalised finish reason.
+     *
+     * @param   string|null  $stopReason  Anthropic stop_reason
+     *
+     * @return  string|null
+     * @since  __DEPLOY_VERSION__
+     */
+    private function normaliseFinishReason(?string $stopReason): ?string
+    {
+        return match ($stopReason) {
+            'end_turn', 'stop_sequence' => 'stop',
+            'max_tokens', 'model_context_window_exceeded' => 'length',
+            'tool_use' => 'tool_calls',
+            'refusal' => 'content_filter',
+            default => $stopReason,
+        };
     }
 
     /**
@@ -416,7 +436,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     /**
      * Build image content block for Anthropic API.
      *
-     * @param   string  $image  Image URL or base64 encoded image
+     * @param   string  $image  Image URL or base64 data URI (data:image/...;base64,...)
      *
      * @return  array   Image content block
      * @throws  \InvalidArgumentException  If image format is invalid
@@ -424,17 +444,13 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildImageContent(string $image): array
     {
-        // Check if it's a URL
-        if (filter_var($image, FILTER_VALIDATE_URL)) {
-            $imageData = $this->fetchImageFromUrl($image);
-            $mimeType = $this->detectImageMimeType($imageData);
-
+        // URLs are passed through; Anthropic fetches the image itself
+        if (filter_var($image, FILTER_VALIDATE_URL) && preg_match('#^https?://#i', $image)) {
             return [
                 'type' => 'image',
                 'source' => [
-                    'type' => 'base64',
-                    'media_type' => $mimeType,
-                    'data' => base64_encode($imageData)
+                    'type' => 'url',
+                    'url' => $image
                 ]
             ];
         }
@@ -456,42 +472,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             ];
         }
 
-        // If it is a file path
-        if (file_exists($image)) {
-            $imageData = file_get_contents($image);
-            $mimeType = $this->detectImageMimeType($imageData);
-
-            return [
-                'type' => 'image',
-                'source' => [
-                    'type' => 'base64',
-                    'media_type' => $mimeType,
-                    'data' => base64_encode($imageData)
-                ]
-            ];
-        }
-
-        throw InvalidArgumentException::invalidParameter('image', $image, 'anthropic', 'Image must be a valid URL, file path, or base64 encoded data.');
-    }
-
-    /**
-     * Fetch image data from URL.
-     *
-     * @param   string  $url  Image URL
-     *
-     * @return  string  Image binary data
-     * @throws  \Exception  If image cannot be fetched
-     * @since  __DEPLOY_VERSION__
-     */
-    private function fetchImageFromUrl(string $url): string
-    {
-        $httpResponse = $this->makeGetRequest($url);
-
-        if ($httpResponse->getStatusCode() !== 200) {
-            throw new \Exception("Failed to fetch image from URL: {$url}");
-        }
-
-        return $httpResponse->getBody();
+        throw InvalidArgumentException::invalidParameter('image', $image, 'anthropic', 'Image must be an http(s) URL or a base64 data URI.');
     }
 
     /**

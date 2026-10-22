@@ -128,6 +128,23 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Get the HTTP client, configured from the "http_options" and "timeout" provider options.
+     *
+     * @return  \Joomla\Http\Http
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getHttpClient()
+    {
+        $httpOptions = (array) $this->getOption('http_options', []);
+
+        if ($this->getOption('timeout') !== null) {
+            $httpOptions['timeout'] = (int) $this->getOption('timeout');
+        }
+
+        return $this->httpFactory->getHttp($httpOptions);
+    }
+
+    /**
      * Make HTTP GET request to AI provider API.
      *
      * @param   string  $url      API endpoint URL
@@ -141,7 +158,7 @@ abstract class AbstractProvider implements ProviderInterface
     protected function makeGetRequest(string $url, array $headers = [], $timeout = null)
     {
         try {
-            $response = $this->httpFactory->getHttp([])->get($url, $headers, $timeout);
+            $response = $this->getHttpClient()->get($url, $headers, $timeout);
 
             $this->validateResponse($response);
         } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
@@ -168,7 +185,7 @@ abstract class AbstractProvider implements ProviderInterface
     protected function makePostRequest(string $url, $data, array $headers = [], $timeout = null)
     {
         try {
-            $response = $this->httpFactory->getHttp([])->post($url, $data, $headers, $timeout);
+            $response = $this->getHttpClient()->post($url, $data, $headers, $timeout);
 
             $this->validateResponse($response);
         } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
@@ -195,7 +212,7 @@ abstract class AbstractProvider implements ProviderInterface
     protected function makeDeleteRequest(string $url, $data, array $headers = [], $timeout = null)
     {
         try {
-            $response = $this->httpFactory->getHttp([])->delete($url, $headers, $timeout, $data);
+            $response = $this->getHttpClient()->delete($url, $headers, $timeout, $data);
 
             $this->validateResponse($response);
         } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
@@ -424,6 +441,29 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         return $this->isModelAvailable($model, $capabilityMap[$capability]);
+    }
+
+    /**
+     * Build the normalised token usage metadata shared by all providers.
+     *
+     * @param   int|null  $inputTokens   Prompt/input tokens
+     * @param   int|null  $outputTokens  Completion/output tokens
+     * @param   int|null  $totalTokens   Total tokens, computed when not given
+     *
+     * @return  array  input_tokens, output_tokens and total_tokens
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function normaliseUsage(?int $inputTokens, ?int $outputTokens, ?int $totalTokens = null): array
+    {
+        if ($totalTokens === null && ($inputTokens !== null || $outputTokens !== null)) {
+            $totalTokens = ($inputTokens ?? 0) + ($outputTokens ?? 0);
+        }
+
+        return [
+            'input_tokens'  => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'total_tokens'  => $totalTokens,
+        ];
     }
 
     /**

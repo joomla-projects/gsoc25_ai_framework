@@ -660,8 +660,9 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
                     'prompt_eval_count' => $data['prompt_eval_count'],
                     'prompt_eval_duration' => $data['prompt_eval_duration'],
                     'eval_count' => $data['eval_count'],
-                    'eval_duration' => $data['eval_duration']
-                ];
+                    'eval_duration' => $data['eval_duration'],
+                    'finish_reason' => $data['done_reason'] ?? null
+                ] + $this->normaliseUsage($data['prompt_eval_count'] ?? null, $data['eval_count'] ?? null);
 
                 // Add chat-specific metadata
                 if ($isChat && isset($data['message']['role'])) {
@@ -719,8 +720,9 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface
             'prompt_eval_count' => $data['prompt_eval_count'] ?? 0,
             'prompt_eval_duration' => $data['prompt_eval_duration'] ?? 0,
             'eval_count' => $data['eval_count'] ?? 0,
-            'eval_duration' => $data['eval_duration'] ?? 0
-        ];
+            'eval_duration' => $data['eval_duration'] ?? 0,
+            'finish_reason' => $data['done_reason'] ?? null
+        ] + $this->normaliseUsage($data['prompt_eval_count'] ?? null, $data['eval_count'] ?? null);
 
         // Add chat-specific metadata
         if ($isChat && isset($data['message']['role'])) {

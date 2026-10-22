@@ -24,9 +24,11 @@ The OpenAI Provider ([`OpenAIProvider`](../../src/Provider/OpenAIProvider.php)) 
 use Joomla\AI\AIFactory;
 
 $openai = AIFactory::getAI('openai', [
-    'api_key' => getenv('OPENAI_API_KEY'),
+    'api_key' => getenv('OPENAI_API_KEY'), // Required: the key is only read from this option
     'base_url' => 'https://api.openai.com/v1', // Optional: custom endpoint
-    'model' => 'gpt-4o-mini' // Optional: default model
+    'model' => 'gpt-4o-mini', // Optional: default model
+    'timeout' => 60, // Optional: request timeout in seconds
+    'http_options' => [], // Optional: passed to HttpFactory::getHttp()
 ]);
 ```
 
@@ -49,7 +51,8 @@ $response = $openai->chat("Write a technical article outline", [
 
 $metadata = $response->getMetadata();
 echo "Used model: " . $metadata['model'] . "\n";
-echo "Tokens used: " . $metadata['usage']['total_tokens'] . "\n";
+echo "Tokens used: " . $response->getUsage()['total_tokens'] . "\n";
+echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
 
 ### Message History

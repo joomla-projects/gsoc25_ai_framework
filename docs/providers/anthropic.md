@@ -16,10 +16,14 @@ The Anthropic Provider ([`AnthropicProvider`](../../src/Provider/AnthropicProvid
 use Joomla\AI\AIFactory;
 
 $anthropic = AIFactory::getAI('anthropic', [
-    'api_key' => getenv('ANTHROPIC_API_KEY'),
-    'model' => 'claude-3-5-sonnet' // Optional: default model
+    'api_key' => getenv('ANTHROPIC_API_KEY'), // Required: the key is only read from this option
+    'model' => 'claude-3-5-sonnet', // Optional: default model
+    'timeout' => 60, // Optional: request timeout in seconds
+    'http_options' => [], // Optional: passed to HttpFactory::getHttp()
 ]);
 ```
+
+Vision accepts an `http(s)` image URL (sent to Anthropic as a URL source, Anthropic fetches it) or a base64 data URI. Local file paths are not read; encode the file yourself as shown below.
 
 ## Chat Completions
 
@@ -39,7 +43,8 @@ $response = $anthropic->chat("How do I optimize database queries in Joomla?", [
 
 $metadata = $response->getMetadata();
 echo "Model used: " . $metadata['model'] . "\n";
-echo "Tokens used: " . $metadata['usage']['input_tokens'] + $metadata['usage']['output_tokens'] . "\n";
+echo "Tokens used: " . $response->getUsage()['total_tokens'] . "\n";
+echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
 
 ### Message History

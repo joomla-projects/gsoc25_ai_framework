@@ -158,13 +158,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Check if OpenAI provider is supported/configured.
      *
-     * @return  boolean  True if API key is available
+     * The API key comes from the api_key option and is checked when a request is made.
+     *
+     * @return  boolean  Always true
      * @since  __DEPLOY_VERSION__
      */
     public static function isSupported(): bool
     {
-        return !empty($_ENV['OPENAI_API_KEY']) ||
-               !empty(getenv('OPENAI_API_KEY'));
+        return true;
     }
 
     /**
@@ -1501,15 +1502,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function getApiKey(): string
     {
-        // To do: Move this to a configuration file or environment variable
-        $apiKey = $this->getOption('api_key') ??
-                  $_ENV['OPENAI_API_KEY'] ??
-                  getenv('OPENAI_API_KEY');
+        $apiKey = $this->getOption('api_key');
 
         if (empty($apiKey)) {
             throw new AuthenticationException(
                 $this->getName(),
-                ['message' => 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable or provide api_key option.'],
+                ['message' => 'OpenAI API key not configured. Provide the api_key option.'],
                 401
             );
         }
@@ -1546,13 +1544,30 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'created' => $data['created'] ?? time(),
             'id' => $data['id'],
             'choices' => $data['choices']
-        ];
+        ] + $this->normaliseOpenAIUsage($data['usage'] ?? []);
 
         return new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
+        );
+    }
+
+    /**
+     * Normalise an OpenAI usage block (chat uses prompt/completion, images use input/output tokens).
+     *
+     * @param   array  $usage  The usage block from the API response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function normaliseOpenAIUsage(array $usage): array
+    {
+        return $this->normaliseUsage(
+            $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null,
+            $usage['output_tokens'] ?? $usage['completion_tokens'] ?? null,
+            $usage['total_tokens'] ?? null
         );
     }
 
@@ -1630,6 +1645,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         if (isset($data['usage'])) {
             $metadata['usage'] = $data['usage'];
+            $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
 
         if (isset($data['model'])) {
@@ -1723,6 +1739,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
                 if (isset($data['usage'])) {
                     $metadata['usage'] = $data['usage'];
+                    $metadata += $this->normaliseOpenAIUsage($data['usage']);
                 }
 
                 // Add language info for transcription
@@ -1821,6 +1838,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         if (isset($data['usage'])) {
             $metadata['usage'] = $data['usage'];
+            $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
 
         if (isset($payload['dimensions'])) {

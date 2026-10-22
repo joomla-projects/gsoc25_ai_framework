@@ -171,6 +171,34 @@ class Response extends HttpResponse
     }
 
     /**
+     * Get normalised token usage, the same shape for every provider.
+     * Values are null when the provider did not report them.
+     *
+     * @return  array{input_tokens: int|null, output_tokens: int|null, total_tokens: int|null}
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getUsage(): array
+    {
+        return [
+            'input_tokens'  => $this->metadata['input_tokens'] ?? null,
+            'output_tokens' => $this->metadata['output_tokens'] ?? null,
+            'total_tokens'  => $this->metadata['total_tokens'] ?? null,
+        ];
+    }
+
+    /**
+     * Get the normalised finish reason: stop, length, content_filter, tool_calls,
+     * or the provider's own value when it has no equivalent. Null if not reported.
+     *
+     * @return  string|null
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getFinishReason(): ?string
+    {
+        return $this->metadata['finish_reason'] ?? null;
+    }
+
+    /**
      * Get the provider of the response.
      *
      * @return  string  The provider of the response.

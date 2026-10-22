@@ -137,7 +137,7 @@ class ChatTest extends TestCase
         $provider = new AnthropicProvider([], $httpFactoryMock);
 
         $this->expectException(AuthenticationException::class);
-        $this->expectExceptionMessage('Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable or provide api_key option.');
+        $this->expectExceptionMessage('Anthropic API key not configured. Provide the api_key option.');
 
         $provider->chat('Hi');
     }
