@@ -6,6 +6,7 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ChatInterface;
 use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ProviderInterface;
@@ -184,6 +185,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $response = $this->makeGetRequest($this->baseUrl . '/api/tags');
         $data = $this->parseJsonResponse($response->getBody());
+        $this->assertResponseFields($data, ['models[]'], (string) $response->getBody());
 
         return array_column($data['models'], 'name');
     }
@@ -203,7 +205,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
         $response = $this->makeGetRequest($endpoint);
         $data = $this->parseJsonResponse($response->getBody());
 
-        return array_column($data['models'] ?? [], 'name');
+        return array_column(is_array($data['models'] ?? null) ? $data['models'] : [], 'name');
     }
 
     /**
@@ -389,13 +391,13 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
                 }
 
                 $data = json_decode($line, true);
-                if (json_last_error() !== JSON_ERROR_NONE) {
+                if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
                     continue;
                 }
 
                 // Check for error in response
                 if (isset($data['error'])) {
-                    $errorMessage = $data['error'];
+                    $errorMessage = (string) $data['error'];
 
                     // Check if this is a "model not found" type error
                     if (
@@ -600,7 +602,9 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
-        $embeddings = $data['embeddings'] ?? [];
+        $this->assertResponseFields($data, ['embeddings[]'], (string) $httpResponse->getBody());
+
+        $embeddings = $data['embeddings'];
         $content = json_encode(is_array($input) ? $embeddings : ($embeddings[0] ?? []));
 
         $metadata = [
@@ -629,7 +633,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             $response = $this->makePostRequest($this->getShowEndpoint(), json_encode(['model' => $model]));
             $data = $this->parseJsonResponse($response->getBody());
 
-            if (in_array('embedding', $data['capabilities'] ?? [], true)) {
+            if (in_array('embedding', (array) ($data['capabilities'] ?? []), true)) {
                 $models[] = $model;
             }
         }
@@ -782,6 +786,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
         $lines = explode("\n", $responseBody);
         $fullContent = '';
         $lastMetadata = [];
+        $validChunks = 0;
 
         foreach ($lines as $line) {
             $line = trim($line);
@@ -790,30 +795,36 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             }
 
             $data = json_decode($line, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
                 continue;
             }
 
+            if (isset($data['error'])) {
+                throw new ProviderException($this->getName(), $data);
+            }
+
+            $validChunks++;
+
             // Accumulate content from each chunk - handle both chat and generate formats
             if ($isChat && isset($data['message']['content'])) {
-                $fullContent .= $data['message']['content'];
+                $fullContent .= (string) $data['message']['content'];
             } elseif (!$isChat && isset($data['response'])) {
-                $fullContent .= $data['response'];
+                $fullContent .= (string) $data['response'];
             }
 
             // Keep track of the last metadata
-            if ($data['done'] === true) {
+            if (($data['done'] ?? false) === true) {
                 $lastMetadata = [
-                    'model' => $data['model'],
-                    'created_at' => $data['created_at'],
+                    'model' => $data['model'] ?? null,
+                    'created_at' => $data['created_at'] ?? null,
                     'done_reason' => $data['done_reason'] ?? null,
-                    'done' => $data['done'],
-                    'total_duration' => $data['total_duration'],
-                    'load_duration' => $data['load_duration'],
-                    'prompt_eval_count' => $data['prompt_eval_count'],
-                    'prompt_eval_duration' => $data['prompt_eval_duration'],
-                    'eval_count' => $data['eval_count'],
-                    'eval_duration' => $data['eval_duration'],
+                    'done' => true,
+                    'total_duration' => $data['total_duration'] ?? 0,
+                    'load_duration' => $data['load_duration'] ?? 0,
+                    'prompt_eval_count' => $data['prompt_eval_count'] ?? 0,
+                    'prompt_eval_duration' => $data['prompt_eval_duration'] ?? 0,
+                    'eval_count' => $data['eval_count'] ?? 0,
+                    'eval_duration' => $data['eval_duration'] ?? 0,
                     'finish_reason' => $data['done_reason'] ?? null
                 ] + $this->normaliseUsage($data['prompt_eval_count'] ?? null, $data['eval_count'] ?? null);
 
@@ -827,6 +838,10 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
                     $lastMetadata['context'] = $data['context'];
                 }
             }
+        }
+
+        if ($validChunks === 0) {
+            throw new UnserializableResponseException($this->getName(), $responseBody, 'No valid JSON chunks in streaming response');
         }
 
         $statusCode = isset($lastMetadata['done_reason']) ? $this->determineAIStatusCode($lastMetadata) : 200;
@@ -857,14 +872,16 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, [$isChat ? 'message[]' : 'response'], $responseBody);
+
         // Extract content based on whether it's a chat or generate response
-        $content = $isChat ? ($data['message']['content'] ?? '') : ($data['response'] ?? '');
+        $content = (string) ($isChat ? ($data['message']['content'] ?? '') : $data['response']);
 
         $statusCode = isset($data['done_reason']) ? $this->determineAIStatusCode($data) : 200;
 
         // Build common metadata
         $metadata = [
-            'model' => $data['model'],
+            'model' => $data['model'] ?? null,
             'created_at' => $data['created_at'] ?? $data['created'] ?? time(),
             'done_reason' => $data['done_reason'] ?? null,
             'done' => $data['done'] ?? true,
@@ -897,7 +914,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
 
     private function determineAIStatusCode(array $data): int
     {
-        $finishReason = $data['done_reason'];
+        $finishReason = $data['done_reason'] ?? null;
 
         switch ($finishReason) {
             case 'stop':

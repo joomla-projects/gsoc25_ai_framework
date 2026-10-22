@@ -464,6 +464,37 @@ abstract class AbstractProvider implements ProviderInterface
     }
 
     /**
+     * Ensure required fields exist in a decoded API response.
+     *
+     * @param   array   $data          Decoded response
+     * @param   array   $requiredPaths Dot paths that must be present and be arrays where noted with a trailing "[]"
+     *                                 (e.g. "choices.0[]", "model")
+     * @param   string  $rawResponse   Raw response body, for the exception
+     *
+     * @throws  UnserializableResponseException  If a required field is missing or has the wrong type
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function assertResponseFields(array $data, array $requiredPaths, string $rawResponse): void
+    {
+        foreach ($requiredPaths as $path) {
+            $mustBeArray = str_ends_with($path, '[]');
+            $value = $data;
+
+            foreach (explode('.', rtrim($path, '[]')) as $segment) {
+                if (!is_array($value) || !array_key_exists($segment, $value)) {
+                    throw new UnserializableResponseException($this->getName(), $rawResponse, "Missing field '" . rtrim($path, '[]') . "' in response");
+                }
+
+                $value = $value[$segment];
+            }
+
+            if ($mustBeArray && !is_array($value)) {
+                throw new UnserializableResponseException($this->getName(), $rawResponse, "Field '" . rtrim($path, '[]') . "' in response must be an array");
+            }
+        }
+    }
+
+    /**
      * Build the normalised token usage metadata shared by all providers.
      *
      * @param   int|null  $inputTokens   Prompt/input tokens
@@ -609,6 +640,10 @@ abstract class AbstractProvider implements ProviderInterface
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new UnserializableResponseException($this->getName(), $jsonString, json_last_error_msg(), 422);
+        }
+
+        if (!is_array($decoded)) {
+            throw new UnserializableResponseException($this->getName(), $jsonString, 'Response is not a JSON object or array', 422);
         }
 
         return $decoded;

@@ -183,6 +183,29 @@ class ChatTest extends TestCase
         $provider->chat('Hello!', ['model' => 'gpt-4o-mini']);
     }
 
+    public function testChatRaisesUnserializableResponseWhenChoicesMissing()
+    {
+        $httpFactoryMock = $this->createMock(HttpFactory::class);
+        $httpClientMock  = $this->createMock(Http::class);
+        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+
+        $moderationResponse = $this->createJsonResponse([
+            'id' => 'modr-test',
+            'model' => 'text-moderation-001',
+            'results' => [['flagged' => false]],
+        ]);
+
+        $malformed = $this->createJsonResponse(['id' => 'chatcmpl-broken', 'object' => 'chat.completion']);
+
+        $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $malformed);
+
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+
+        $this->expectException(UnserializableResponseException::class);
+        $this->expectExceptionMessage("Missing field 'choices.0'");
+        $provider->chat('Hello!', ['model' => 'gpt-4o-mini']);
+    }
+
     public function testChatHandlesBase64ContentInChoices()
     {
         // Test 6: Test chat method handles base64 encoded content in choices metadata

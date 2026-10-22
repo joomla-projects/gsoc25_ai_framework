@@ -14,6 +14,7 @@ use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
@@ -289,6 +290,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $headers = $this->buildHeaders();
         $response = $this->makeGetRequest($this->baseUrl . '/models', $headers);
         $data = $this->parseJsonResponse($response->getBody());
+
+        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
 
         return array_column($data['data'], 'id');
     }
@@ -1536,19 +1539,22 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['choices.0[]'], $responseBody);
+
         // Handle multiple choices - use first choice for content, but include all in metadata
-        $content = $data['choices'][0]['message']['content'] ?? '';
+        $content = (string) ($data['choices'][0]['message']['content'] ?? '');
 
         $statusCode = $this->determineAIStatusCode($data);
+        $usage = is_array($data['usage'] ?? null) ? $data['usage'] : [];
 
         $metadata = [
-            'model' => $data['model'],
-            'usage' => $data['usage'],
-            'finish_reason' => $data['choices'][0]['finish_reason'],
+            'model' => $data['model'] ?? null,
+            'usage' => $usage,
+            'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
             'created' => $data['created'] ?? time(),
-            'id' => $data['id'],
+            'id' => $data['id'] ?? null,
             'choices' => $data['choices']
-        ] + $this->normaliseOpenAIUsage($data['usage'] ?? []);
+        ] + $this->normaliseOpenAIUsage($usage);
 
         return new Response(
             $content,
@@ -1594,11 +1600,17 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['data[]'], $responseBody);
+
         $images = [];
         $responseFormat = '';
 
         if (isset($data['data']) && is_array($data['data'])) {
             foreach ($data['data'] as $imageData) {
+                if (!is_array($imageData)) {
+                    throw new UnserializableResponseException($this->getName(), $responseBody, 'Image entries in response must be objects');
+                }
+
                 $imageItem = [];
 
                 // Handle URL format
@@ -1634,7 +1646,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         $metadata = [
-            'model' => $data['model'] ?? $payload['model'],
+            'model' => $data['model'] ?? $payload['model'] ?? null,
             'created' => $data['created'] ?? time(),
             'response_format' => $responseFormat,
             'image_count' => count($images),
@@ -1647,7 +1659,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata['format'] = 'base64_png';
         }
 
-        if (isset($data['usage'])) {
+        if (isset($data['usage']) && is_array($data['usage'])) {
             $metadata['usage'] = $data['usage'];
             $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
@@ -1734,14 +1746,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                     throw new ProviderException($this->getName(), $data);
                 }
 
-                $content = $data['text'] ?? '';
+                $content = (string) ($data['text'] ?? '');
                 $metadata = [
                     'model' => $payload['model'],
                     'response_format' => $responseFormat,
                     'created' => time()
                 ];
 
-                if (isset($data['usage'])) {
+                if (isset($data['usage']) && is_array($data['usage'])) {
                     $metadata['usage'] = $data['usage'];
                     $metadata += $this->normaliseOpenAIUsage($data['usage']);
                 }
@@ -1817,15 +1829,20 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['data[]'], $responseBody);
+
         $embeddings = [];
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $embeddingData) {
-                $embeddings[] = [
-                    'embedding' => $embeddingData['embedding'],
-                    'index' => $embeddingData['index'],
-                    'object' => $embeddingData['object']
-                ];
+        foreach ($data['data'] as $embeddingData) {
+            // "embedding" is a float array, or a base64 string when encoding_format is base64
+            if (!is_array($embeddingData) || !(is_array($embeddingData['embedding'] ?? null) || is_string($embeddingData['embedding'] ?? null))) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Embedding entries in response must contain an embedding');
             }
+
+            $embeddings[] = [
+                'embedding' => $embeddingData['embedding'],
+                'index' => $embeddingData['index'] ?? count($embeddings),
+                'object' => $embeddingData['object'] ?? 'embedding'
+            ];
         }
 
         $contentData = count($embeddings) === 1 ? $embeddings[0]['embedding'] : $embeddings;
@@ -1833,14 +1850,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $metadata = [
             'model' => $data['model'] ?? $payload['model'],
-            'object' => $data['object'],
+            'object' => $data['object'] ?? null,
             'embedding_count' => count($embeddings),
             'encoding_format' => $payload['encoding_format'],
             'input_type' => is_array($payload['input']) ? 'array' : 'string',
             'raw_embeddings' => $embeddings,
         ];
 
-        if (isset($data['usage'])) {
+        if (isset($data['usage']) && is_array($data['usage'])) {
             $metadata['usage'] = $data['usage'];
             $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
@@ -2102,7 +2119,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function determineAIStatusCode(array $data): int
     {
-        $finishReason = $data['choices'][0]['finish_reason'];
+        $finishReason = $data['choices'][0]['finish_reason'] ?? null;
 
         switch ($finishReason) {
             case 'stop':

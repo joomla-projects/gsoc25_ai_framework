@@ -159,6 +159,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
         // The Models API pages at 20 by default
         $response = $this->makeGetRequest($this->getModelsEndpoint() . '?limit=1000', $headers);
         $data = $this->parseJsonResponse($response->getBody());
+        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
 
         return array_column($data['data'], 'id');
     }
@@ -389,23 +390,27 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             throw new ProviderException($this->getName(), $data);
         }
 
-        // Get the text content from the first content block
+        $this->assertResponseFields($data, ['content[]'], $responseBody);
+
+        // Join the text blocks; thinking and tool_use blocks may come before them
         $content = '';
-        if (!empty($data['content'][0]['text'])) {
-            $content = $data['content'][0]['text'];
+        foreach ($data['content'] as $block) {
+            if (is_array($block) && ($block['type'] ?? null) === 'text') {
+                $content .= (string) ($block['text'] ?? '');
+            }
         }
 
         $statusCode = $this->determineAIStatusCode($data);
 
         $metadata = [
             'id' => $data['id'] ?? null,
-            'model' => $data['model'],
-            'role' => $data['role'],
-            'type' => $data['type'],
-            'usage' => $data['usage'] ?? [],
+            'model' => $data['model'] ?? null,
+            'role' => $data['role'] ?? null,
+            'type' => $data['type'] ?? null,
+            'usage' => is_array($data['usage'] ?? null) ? $data['usage'] : [],
             'finish_reason' => $this->normaliseFinishReason($data['stop_reason'] ?? null),
-            'stop_reason' => $data['stop_reason'],
-            'stop_sequence' => $data['stop_sequence']
+            'stop_reason' => $data['stop_reason'] ?? null,
+            'stop_sequence' => $data['stop_sequence'] ?? null
         ] + $this->normaliseUsage(
             $data['usage']['input_tokens'] ?? null,
             $data['usage']['output_tokens'] ?? null

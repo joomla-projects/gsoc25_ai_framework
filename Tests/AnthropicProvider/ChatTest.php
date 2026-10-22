@@ -155,6 +155,46 @@ class ChatTest extends TestCase
         $provider->chat('Return malformed payload');
     }
 
+    public function testChatThrowsUnserializableResponseExceptionWhenContentMissing(): void
+    {
+        $provider = $this->createProviderWithResponses([
+            $this->createJsonResponse([
+                'id' => 'msg_broken',
+                'type' => 'message',
+            ]),
+        ]);
+
+        $this->expectException(UnserializableResponseException::class);
+        $this->expectExceptionMessage("Missing field 'content'");
+
+        $provider->chat('Hello?');
+    }
+
+    public function testChatJoinsTextBlocksAndSkipsThinking(): void
+    {
+        $provider = $this->createProviderWithResponses([
+            $this->createJsonResponse([
+                'id' => 'msg_thinking',
+                'type' => 'message',
+                'role' => 'assistant',
+                'model' => 'claude-opus-5-5',
+                'content' => [
+                    ['type' => 'thinking', 'thinking' => '', 'signature' => 'sig'],
+                    ['type' => 'text', 'text' => 'Hello '],
+                    ['type' => 'text', 'text' => 'there'],
+                ],
+                'usage' => ['input_tokens' => 5, 'output_tokens' => 7],
+                'stop_reason' => 'end_turn',
+            ]),
+        ]);
+
+        $response = $provider->chat('Hi');
+
+        $this->assertSame('Hello there', $response->getContent());
+        $this->assertSame('stop', $response->getFinishReason());
+        $this->assertSame(['input_tokens' => 5, 'output_tokens' => 7, 'total_tokens' => 12], $response->getUsage());
+    }
+
     private function createProviderWithResponses(array $responses): AnthropicProvider
     {
         $httpFactoryMock = $this->createMock(HttpFactory::class);
