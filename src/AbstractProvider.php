@@ -444,10 +444,10 @@ abstract class AbstractProvider implements ProviderInterface
                 case 429:
                     if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') || str_contains(strtolower($message), 'billing')) {
                         throw new QuotaExceededException($this->getName(), $errorData, $response->getStatusCode());
-                    } elseif (str_contains(strtolower($message), 'rate') || str_contains(strtolower($message), 'limit') || str_contains(strtolower($message), 'too many requests')) {
-                        throw new RateLimitException($this->getName(), $errorData, $response->getStatusCode());
                     }
-                    break;
+
+                    // Any other 429 is treated as a rate limit
+                    throw new RateLimitException($this->getName(), $errorData, $response->getStatusCode());
 
                 default:
                     throw new ProviderException($this->getName(), $errorData, $response->getStatusCode(), $providerErrorCode);
