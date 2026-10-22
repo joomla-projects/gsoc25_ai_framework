@@ -51,7 +51,7 @@ class ChatTest extends TestCase
             null
         )->willReturn($chatResponse);
 
-        $provider = new AnthropicProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new AnthropicProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
         $response = $provider->chat('Hello there');
 
         $this->assertSame(200, $response->getStatusCode());
@@ -204,7 +204,7 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
 
-        return new AnthropicProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        return new AnthropicProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
     }
 
     private function createJsonResponse(array $payload, int $status = 200): HttpResponse

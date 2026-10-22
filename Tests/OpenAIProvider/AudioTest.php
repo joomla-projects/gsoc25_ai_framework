@@ -223,7 +223,7 @@ class AudioTest extends TestCase
             $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
         }
 
-        return new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        return new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
     }
 
     private function createTempAudioFile(): string

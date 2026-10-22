@@ -153,6 +153,37 @@ $person = $response->getJson(); // ['name' => 'Ada Lovelace', 'age' => 36]
 
 You can also pass the schema directly as `response_schema`.
 
+### Retries
+Rate limits (429, except quota/billing errors), 5xx responses and connection errors are retried up to `max_retries` times (default 2). The provider's `Retry-After` / `retry-after-ms` header is honoured; otherwise the delay is exponential backoff starting at `retry_base_delay` seconds (default 0.5). No wait is longer than `retry_max_delay` (default 60). A stream is only retried if it fails before any text was received.
+
+```php
+$ai = $factory->getAI('anthropic', ['api_key' => $key, 'max_retries' => 4, 'retry_max_delay' => 20]);
+```
+
+Set `'max_retries' => 0` to turn retries off.
+
+### Logging and hooks
+Providers implement PSR-3 `LoggerAwareInterface`. Pass a logger as the `logger` option or call `setLogger()`. Requests are logged at debug level, responses at info level (status and duration), retries at warning level and failures at error level. Only the provider, method, URL, status and timing are logged: never headers or bodies, so API keys and prompts stay out of your logs.
+
+Hooks run around every request:
+
+```php
+$ai->getProvider()
+    ->addHook('before_request', fn (array $request) => $metrics->increment('ai.requests'))
+    ->addHook('after_response', fn (array $request, $response, float $seconds) => $metrics->timing('ai.latency', $seconds))
+    ->addHook('on_retry', fn (array $request, float $delay, $reason) => null)
+    ->addHook('on_error', fn (array $request, \Throwable $e) => $alerts->notify($e));
+```
+
+`$request` contains `provider`, `method`, `url`, `stream` and `attempt`. Hooks can also be passed as the `hooks` option, keyed by event name.
+
+### Embeddings
+`getEmbeddings()` returns one float vector per input, and `getEmbedding()` returns the first. Base64 responses (`encoding_format => 'base64'`) are decoded for you.
+
+```php
+$vectors = $openai->createEmbeddings(['first text', 'second text'], 'text-embedding-3-small')->getEmbeddings();
+```
+
 ### Custom providers and DI
 `AIFactory` is a regular service: inject an `HttpFactory` and register extra providers (any class extending `AbstractProvider`), or pass a provider class name straight to `getAI()`.
 

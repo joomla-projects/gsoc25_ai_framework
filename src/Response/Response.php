@@ -241,6 +241,30 @@ class Response extends HttpResponse
     }
 
     /**
+     * Get the embedding vectors, one per input, in input order.
+     *
+     * Base64-encoded embeddings are decoded, so this is always a list of float arrays.
+     *
+     * @return  array<int, array<int, float>>  Empty when the response is not an embeddings response
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getEmbeddings(): array
+    {
+        return $this->metadata['embeddings'] ?? [];
+    }
+
+    /**
+     * Get the first embedding vector, for single-input requests.
+     *
+     * @return  array<int, float>
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getEmbedding(): array
+    {
+        return $this->getEmbeddings()[0] ?? [];
+    }
+
+    /**
      * Get the provider of the response.
      *
      * @return  string  The provider of the response.

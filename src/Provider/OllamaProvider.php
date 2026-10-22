@@ -682,6 +682,7 @@ class OllamaProvider extends AbstractProvider implements ProviderInterface, Chat
         $metadata = [
             'model' => $data['model'] ?? $model,
             'embedding_count' => count($embeddings),
+            'embeddings' => array_map(fn ($vector): array => array_map('floatval', (array) $vector), $embeddings),
             'input_type' => is_array($input) ? 'array' : 'string',
             'total_duration' => $data['total_duration'] ?? 0,
             'load_duration' => $data['load_duration'] ?? 0,

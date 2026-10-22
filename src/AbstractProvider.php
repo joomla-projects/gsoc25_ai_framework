@@ -21,13 +21,16 @@ use Joomla\AI\Interface\ModerationInterface;
 use Joomla\AI\Http\CurlStreamTransport;
 use Joomla\AI\Http\StreamTransportInterface;
 use Joomla\AI\Response\Response;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Abstract provider class.
  *
  * @since  __DEPLOY_VERSION__
  */
-abstract class AbstractProvider implements ProviderInterface
+abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterface
 {
     /**
      * The provider options.
@@ -52,6 +55,22 @@ abstract class AbstractProvider implements ProviderInterface
      * @since  __DEPLOY_VERSION__
      */
     protected $defaultModel = null;
+
+    /**
+     * PSR-3 logger
+     *
+     * @var    LoggerInterface|null
+     * @since  __DEPLOY_VERSION__
+     */
+    private ?LoggerInterface $logger = null;
+
+    /**
+     * Hooks registered with addHook(), event => callbacks
+     *
+     * @var    array
+     * @since  __DEPLOY_VERSION__
+     */
+    private array $hooks = [];
 
     /**
      * Resolved capability map (defaults merged with the "capabilities" option).
@@ -185,11 +204,363 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function makeStreamingPostRequest(string $url, string $data, array $headers = []): \Generator
     {
-        $stream = $this->getStreamTransport()->stream('POST', $url, $data, $headers);
+        $request = ['provider' => $this->getName(), 'method' => 'POST', 'url' => $url, 'stream' => true];
+        $maxRetries = $this->getMaxRetries();
 
-        yield from $stream;
+        for ($attempt = 0;; $attempt++) {
+            $request['attempt'] = $attempt;
+            $this->beforeRequest($request);
+            $start = microtime(true);
+            $progress = new \ArrayObject(['yielded' => false]);
 
-        $this->validateResponse($stream->getReturn());
+            try {
+                $response = yield from $this->relayChunks(
+                    $this->getStreamTransport()->stream('POST', $url, $data, $headers),
+                    $progress
+                );
+            } catch (\RuntimeException $e) {
+                // A dropped connection can only be retried before any output was passed on
+                if (!$progress['yielded'] && $attempt < $maxRetries) {
+                    $this->retryAfter($request, $this->getBackoffDelay($attempt), $e);
+                    continue;
+                }
+
+                $this->onRequestError($request, $e);
+
+                throw $e;
+            }
+
+            $this->afterResponse($request, $response, microtime(true) - $start);
+
+            if (!$progress['yielded'] && $attempt < $maxRetries && $this->isRetryableResponse($response)) {
+                $this->retryAfter($request, $this->getRetryDelay($response, $attempt), $response);
+                continue;
+            }
+
+            $this->validateWithHooks($request, $response);
+
+            return;
+        }
+    }
+
+    /**
+     * Pass a transport's chunks on, recording whether any were yielded (used to decide if a retry is safe).
+     *
+     * @param   \Generator    $stream    Generator from StreamTransportInterface::stream()
+     * @param   \ArrayObject  $progress  Gets 'yielded' => true once the first chunk is passed on
+     *
+     * @return  \Generator<int, string, mixed, \Joomla\Http\Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    private function relayChunks(\Generator $stream, \ArrayObject $progress): \Generator
+    {
+        foreach ($stream as $chunk) {
+            $progress['yielded'] = true;
+
+            yield $chunk;
+        }
+
+        return $stream->getReturn();
+    }
+
+    /**
+     * Send a request with logging, hooks and retries.
+     *
+     * Retries 429 (except quota errors), 5xx responses and transport errors up to "max_retries"
+     * times (default 2), waiting for Retry-After when the provider sends it, otherwise with
+     * exponential backoff starting at "retry_base_delay" seconds, capped at "retry_max_delay".
+     *
+     * @param   string    $method  HTTP method, for logging and hooks
+     * @param   string    $url     Request URL
+     * @param   callable  $send    Performs the request and returns the HTTP response
+     *
+     * @return  \Joomla\Http\Response
+     * @throws  AuthenticationException|RateLimitException|QuotaExceededException|ProviderException
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function sendRequest(string $method, string $url, callable $send)
+    {
+        $request = ['provider' => $this->getName(), 'method' => $method, 'url' => $url, 'stream' => false];
+        $maxRetries = $this->getMaxRetries();
+
+        for ($attempt = 0;; $attempt++) {
+            $request['attempt'] = $attempt;
+            $this->beforeRequest($request);
+            $start = microtime(true);
+
+            try {
+                $response = $send();
+            } catch (\RuntimeException $e) {
+                if ($attempt < $maxRetries) {
+                    $this->retryAfter($request, $this->getBackoffDelay($attempt), $e);
+                    continue;
+                }
+
+                $this->onRequestError($request, $e);
+
+                throw $e;
+            }
+
+            $this->afterResponse($request, $response, microtime(true) - $start);
+
+            if ($attempt < $maxRetries && $this->isRetryableResponse($response)) {
+                $this->retryAfter($request, $this->getRetryDelay($response, $attempt), $response);
+                continue;
+            }
+
+            $this->validateWithHooks($request, $response);
+
+            return $response;
+        }
+    }
+
+    /**
+     * Register a hook. Events and arguments:
+     * - before_request(array $request)
+     * - after_response(array $request, \Joomla\Http\Response $response, float $seconds)
+     * - on_retry(array $request, float $delaySeconds, \Joomla\Http\Response|\Throwable $reason)
+     * - on_error(array $request, \Throwable $error)
+     *
+     * $request holds provider, method, url, stream and attempt (0 for the first try).
+     * Hooks can also be passed as the "hooks" option: ['before_request' => callable, ...].
+     *
+     * @param   string    $event     The event name
+     * @param   callable  $callback  The callback
+     *
+     * @return  $this
+     * @throws  InvalidArgumentException  For an unknown event
+     * @since   __DEPLOY_VERSION__
+     */
+    public function addHook(string $event, callable $callback): static
+    {
+        if (!in_array($event, ['before_request', 'after_response', 'on_retry', 'on_error'], true)) {
+            throw InvalidArgumentException::invalidParameter('event', $event, $this->getName(), 'Unknown hook event.');
+        }
+
+        $this->hooks[$event][] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Set the PSR-3 logger. The "logger" provider option does the same.
+     *
+     * @param   LoggerInterface  $logger  The logger
+     *
+     * @return  void
+     * @since   __DEPLOY_VERSION__
+     */
+    public function setLogger(LoggerInterface $logger): void
+    {
+        $this->logger = $logger;
+    }
+
+    /**
+     * Get the PSR-3 logger (a NullLogger unless one was set or passed as the "logger" option).
+     *
+     * @return  LoggerInterface
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getLogger(): LoggerInterface
+    {
+        return $this->logger ??= ($this->getOption('logger') instanceof LoggerInterface ? $this->getOption('logger') : new NullLogger());
+    }
+
+    /**
+     * Run the hooks registered for an event.
+     *
+     * @param   string  $event      The event name
+     * @param   mixed   ...$arguments  Arguments for the callbacks
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    private function dispatchHook(string $event, ...$arguments): void
+    {
+        $callbacks = array_merge((array) ($this->getOption('hooks', [])[$event] ?? []), $this->hooks[$event] ?? []);
+
+        foreach ($callbacks as $callback) {
+            if (is_callable($callback)) {
+                $callback(...$arguments);
+            }
+        }
+    }
+
+    private function beforeRequest(array $request): void
+    {
+        $this->getLogger()->debug('{provider} {method} {url} (attempt {attempt})', $request);
+        $this->dispatchHook('before_request', $request);
+    }
+
+    private function afterResponse(array $request, $response, float $seconds): void
+    {
+        $this->getLogger()->info('{provider} {method} {url} returned {status} in {seconds}s', $request + [
+            'status' => $response->getStatusCode(),
+            'seconds' => round($seconds, 3),
+        ]);
+        $this->dispatchHook('after_response', $request, $response, $seconds);
+    }
+
+    private function retryAfter(array $request, float $delay, $reason): void
+    {
+        $this->getLogger()->warning('{provider} {method} {url} failed ({reason}), retrying in {delay}s', $request + [
+            'reason' => $reason instanceof \Throwable ? $reason->getMessage() : 'HTTP ' . $reason->getStatusCode(),
+            'delay' => round($delay, 3),
+        ]);
+        $this->dispatchHook('on_retry', $request, $delay, $reason);
+        $this->pause($delay);
+    }
+
+    private function onRequestError(array $request, \Throwable $error): void
+    {
+        $this->getLogger()->error('{provider} {method} {url} failed: {error}', $request + ['error' => $error->getMessage(), 'exception' => $error]);
+        $this->dispatchHook('on_error', $request, $error);
+    }
+
+    /**
+     * Validate a response, reporting failures to the logger and on_error hooks.
+     *
+     * @param   array                  $request   Request info
+     * @param   \Joomla\Http\Response  $response  The response
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    private function validateWithHooks(array $request, $response): void
+    {
+        try {
+            $this->validateResponse($response);
+        } catch (\Exception $e) {
+            $this->onRequestError($request, $e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Get the configured number of retries.
+     *
+     * @return  int
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getMaxRetries(): int
+    {
+        return max(0, (int) $this->getOption('max_retries', 2));
+    }
+
+    /**
+     * Check whether a response should be retried: 429 (not quota/billing) or a 5xx other than 501.
+     *
+     * @param   \Joomla\Http\Response  $response  The response
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function isRetryableResponse($response): bool
+    {
+        $status = $response->getStatusCode();
+
+        if ($status === 429) {
+            return !$this->isQuotaError($this->getErrorMessage($response));
+        }
+
+        return $status >= 500 && $status !== 501;
+    }
+
+    /**
+     * Seconds to wait before retrying, from Retry-After / retry-after-ms or exponential backoff.
+     *
+     * @param   \Joomla\Http\Response  $response  The response
+     * @param   int                    $attempt   Zero-based attempt number
+     *
+     * @return  float
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getRetryDelay($response, int $attempt): float
+    {
+        $maxDelay = (float) $this->getOption('retry_max_delay', 60);
+
+        $retryAfterMs = $response->getHeaderLine('retry-after-ms');
+        if (is_numeric($retryAfterMs)) {
+            return min($maxDelay, max(0.0, (float) $retryAfterMs / 1000));
+        }
+
+        $retryAfter = trim($response->getHeaderLine('retry-after'));
+        if (is_numeric($retryAfter)) {
+            return min($maxDelay, max(0.0, (float) $retryAfter));
+        }
+
+        if ($retryAfter !== '' && ($timestamp = strtotime($retryAfter)) !== false) {
+            return min($maxDelay, max(0.0, (float) ($timestamp - time())));
+        }
+
+        return $this->getBackoffDelay($attempt);
+    }
+
+    /**
+     * Exponential backoff with jitter: base * 2^attempt, scaled by 0.8-1.0, capped at retry_max_delay.
+     *
+     * @param   int  $attempt  Zero-based attempt number
+     *
+     * @return  float
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getBackoffDelay(int $attempt): float
+    {
+        $base = (float) $this->getOption('retry_base_delay', 0.5);
+        $delay = $base * (2 ** $attempt) * (0.8 + mt_rand() / mt_getrandmax() * 0.2);
+
+        return min((float) $this->getOption('retry_max_delay', 60), $delay);
+    }
+
+    /**
+     * Wait before a retry. Override in tests to avoid sleeping.
+     *
+     * @param   float  $seconds  Seconds to wait
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function pause(float $seconds): void
+    {
+        if ($seconds > 0) {
+            usleep((int) round($seconds * 1000000));
+        }
+    }
+
+    /**
+     * Extract the error message from an error response.
+     *
+     * @param   \Joomla\Http\Response  $response  The response
+     *
+     * @return  string
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getErrorMessage($response): string
+    {
+        $body = (string) $response->getBody();
+        $response->getBody()->rewind();
+        $errorData = json_decode($body, true);
+
+        if (!is_array($errorData)) {
+            return $body;
+        }
+
+        $message = $errorData['message'] ?? $errorData['error']['message'] ?? $errorData['error'] ?? '';
+
+        return is_string($message) ? $message : '';
+    }
+
+    /**
+     * Check whether a 429 message means the account is out of quota (not worth retrying).
+     *
+     * @param   string  $message  The error message
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    private function isQuotaError(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'quota') || str_contains($message, 'credits') || str_contains($message, 'billing');
     }
 
     /**
@@ -322,17 +693,7 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function makeGetRequest(string $url, array $headers = [], $timeout = null)
     {
-        try {
-            $response = $this->getHttpClient()->get($url, $headers, $timeout);
-
-            $this->validateResponse($response);
-        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
-            throw $e;
-        } catch (ProviderException $e) {
-            throw $e;
-        }
-
-        return $response;
+        return $this->sendRequest('GET', $url, fn () => $this->getHttpClient()->get($url, $headers, $timeout));
     }
 
     /**
@@ -349,17 +710,7 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function makePostRequest(string $url, $data, array $headers = [], $timeout = null)
     {
-        try {
-            $response = $this->getHttpClient()->post($url, $data, $headers, $timeout);
-
-            $this->validateResponse($response);
-        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
-            throw $e;
-        } catch (ProviderException $e) {
-            throw $e;
-        }
-
-        return $response;
+        return $this->sendRequest('POST', $url, fn () => $this->getHttpClient()->post($url, $data, $headers, $timeout));
     }
 
     /**
@@ -376,17 +727,7 @@ abstract class AbstractProvider implements ProviderInterface
      */
     protected function makeDeleteRequest(string $url, $data, array $headers = [], $timeout = null)
     {
-        try {
-            $response = $this->getHttpClient()->delete($url, $headers, $timeout, $data);
-
-            $this->validateResponse($response);
-        } catch (AuthenticationException | RateLimitException | QuotaExceededException $e) {
-            throw $e;
-        } catch (ProviderException $e) {
-            throw $e;
-        }
-
-        return $response;
+        return $this->sendRequest('DELETE', $url, fn () => $this->getHttpClient()->delete($url, $headers, $timeout, $data));
     }
     /**
      * Make multipart HTTP POST request.
@@ -870,7 +1211,7 @@ abstract class AbstractProvider implements ProviderInterface
                     throw new AuthenticationException($this->getName(), $errorData, $response->getStatusCode());
 
                 case 429:
-                    if (str_contains(strtolower($message), 'quota') || str_contains(strtolower($message), 'credits') || str_contains(strtolower($message), 'billing')) {
+                    if ($this->isQuotaError((string) $message)) {
                         throw new QuotaExceededException($this->getName(), $errorData, $response->getStatusCode());
                     }
 

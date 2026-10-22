@@ -1771,6 +1771,35 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
+     * Turn embedding entries into float vectors ordered by index, decoding base64 (little-endian float32).
+     *
+     * @param   array   $embeddings    Entries with "embedding" and "index"
+     * @param   string  $responseBody  Raw response, for errors
+     *
+     * @return  array<int, array<int, float>>
+     * @throws  UnserializableResponseException  If base64 data cannot be decoded
+     * @since   __DEPLOY_VERSION__
+     */
+    private function decodeEmbeddings(array $embeddings, string $responseBody): array
+    {
+        usort($embeddings, fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+
+        return array_map(function (array $entry) use ($responseBody): array {
+            if (is_array($entry['embedding'])) {
+                return array_map('floatval', $entry['embedding']);
+            }
+
+            $binary = base64_decode($entry['embedding'], true);
+
+            if ($binary === false || strlen($binary) % 4 !== 0) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Base64 embedding could not be decoded');
+            }
+
+            return array_values(unpack('g*', $binary));
+        }, $embeddings);
+    }
+
+    /**
      * Normalise an OpenAI usage block (chat uses prompt/completion, images use input/output tokens).
      *
      * @param   array  $usage  The usage block from the API response
@@ -2061,6 +2090,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             'encoding_format' => $payload['encoding_format'],
             'input_type' => is_array($payload['input']) ? 'array' : 'string',
             'raw_embeddings' => $embeddings,
+            'embeddings' => $this->decodeEmbeddings($embeddings, $responseBody),
         ];
 
         if (isset($data['usage']) && is_array($data['usage'])) {
