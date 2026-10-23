@@ -71,12 +71,12 @@ class EmbeddingTest extends TestCase
                 [
                     'object' => 'embedding',
                     'index' => 0,
-                    'embedding' => base64_encode('vector-one'),
+                    'embedding' => base64_encode(pack('g*', 0.5, -1.25)),
                 ],
                 [
                     'object' => 'embedding',
                     'index' => 1,
-                    'embedding' => base64_encode('vector-two'),
+                    'embedding' => base64_encode(pack('g*', 2.0, 0.75)),
                 ],
             ],
         ]);
@@ -91,14 +91,18 @@ class EmbeddingTest extends TestCase
 
         $decodedContent = json_decode($response->getContent(), true);
         $this->assertCount(2, $decodedContent);
-        $this->assertSame(base64_encode('vector-one'), $decodedContent[0]['embedding']);
-        $this->assertSame(base64_encode('vector-two'), $decodedContent[1]['embedding']);
+        $this->assertSame(base64_encode(pack('g*', 0.5, -1.25)), $decodedContent[0]['embedding']);
+        $this->assertSame(base64_encode(pack('g*', 2.0, 0.75)), $decodedContent[1]['embedding']);
 
         $metadata = $response->getMetadata();
         $this->assertSame('text-embedding-3-large', $metadata['model']);
         $this->assertSame(2, $metadata['embedding_count']);
         $this->assertSame('base64', $metadata['encoding_format']);
         $this->assertSame('array', $metadata['input_type']);
+
+        // Values chosen to be exact in float32
+        $this->assertSame([[0.5, -1.25], [2.0, 0.75]], $response->getEmbeddings());
+        $this->assertSame([0.5, -1.25], $response->getEmbedding());
     }
 
     public function testCreateEmbeddingsThrowsInvalidModel()
@@ -205,8 +209,8 @@ class EmbeddingTest extends TestCase
 
     private function createProviderWithResponses(HttpResponse ...$responses): OpenAIProvider
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock = $this->createMock(Http::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock = $this->createStub(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
@@ -214,7 +218,7 @@ class EmbeddingTest extends TestCase
             $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
         }
 
-        return new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        return new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
     }
 
     private function createJsonResponse(array $payload, int $status = 200): HttpResponse

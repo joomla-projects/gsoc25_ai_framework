@@ -32,14 +32,14 @@ interface ImageInterface
     /**
      * Modify an existing image from the text prompt given to the AI provider.
      *
-     * @param   string  $imagePath  Path to the image file to modify.
+     * @param   string|array  $imagePath  Path to the image to modify, or several paths (gpt-image-1).
      * @param   string  $prompt     Text description of the desired modifications
      * @param   array   $options   An associative array of options to send with the request.
      *
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function editImage(string $imagePath, string $prompt, array $options = []): Response;
+    public function editImage(string|array $imagePath, string $prompt, array $options = []): Response;
 
     /**
      * Create alternative versions of an image from the text prompt given to the AI provider.

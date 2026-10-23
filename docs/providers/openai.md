@@ -18,15 +18,19 @@ The OpenAI Provider ([`OpenAIProvider`](../../src/Provider/OpenAIProvider.php)) 
 | **Embeddings** | Generate vector embeddings for text similarity and search |
 | **Moderation** | Content safety checking and flagging inappropriate content |
 
+Streaming, tool calling, JSON schema output, conversations and limits are described in [Features](../features.md).
+
 ## Configuration
 
 ```php
 use Joomla\AI\AIFactory;
 
-$openai = AIFactory::getAI('openai', [
-    'api_key' => getenv('OPENAI_API_KEY'),
+$openai = (new AIFactory())->getAI('openai', [
+    'api_key' => getenv('OPENAI_API_KEY'), // Required: the key is only read from this option
     'base_url' => 'https://api.openai.com/v1', // Optional: custom endpoint
-    'model' => 'gpt-4o-mini' // Optional: default model
+    'model' => 'gpt-4o-mini', // Optional: default model
+    'timeout' => 60, // Optional: request timeout in seconds
+    'http_options' => [], // Optional: passed to HttpFactory::getHttp()
 ]);
 ```
 
@@ -49,10 +53,13 @@ $response = $openai->chat("Write a technical article outline", [
 
 $metadata = $response->getMetadata();
 echo "Used model: " . $metadata['model'] . "\n";
-echo "Tokens used: " . $metadata['usage']['total_tokens'] . "\n";
+echo "Tokens used: " . $response->getUsage()['total_tokens'] . "\n";
+echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
 
 ### Message History
+Pass the history yourself, or use a [conversation](../features.md#conversations) to keep it for you.
+
 ```php
 $response = $openai->chat("", [
     'messages' => [
@@ -264,15 +271,14 @@ echo "English translation: " . $translation->getContent();
 
 ## Embeddings
 
-### Basic Embeddings
 ```php
-$embeddings = $openai->createEmbeddings(
+$vector = $openai->createEmbeddings(
     "Joomla is a content management system",
-    'text-embedding-3-small'
-);
+    'text-embedding-3-small',
+    ['dimensions' => 512] // optional, text-embedding-3 models only
+)->getEmbedding();
 
-$vectors = json_decode($embeddings->getContent());
-echo "Vector dimensions: " . count($vectors) . "\n";
+echo "Vector dimensions: " . count($vector) . "\n";
 ```
 
 ## Content Moderation
@@ -297,25 +303,6 @@ $allModels = $openai->getAvailableModels();
 echo "Available models: " . implode(', ', $allModels) . "\n";
 ```
 
-## Default Model Management
-
-Set defaults to avoid repeating model names:
-
-```php
-// Set defaults for different capabilities
-$openai->setDefaultModel('gpt-4o-mini');
-
-// All these use the default
-$chat = $openai->chat("Hello");
-$vision = $openai->vision("Describe this", $imageUrl);
-
-// Override for specific calls
-$premium = $openai->chat("Complex analysis", ['model' => 'gpt-4o']);
-
-// Clear defaults
-$openai->unsetDefaultModel();
-```
-
 ## Error Handling
 
 OpenAI-specific error patterns:
@@ -337,6 +324,24 @@ try {
 ```
 
 ## Important Constraints
+
+The model lists and limits below live in one capability map (`OpenAIProvider::getDefaultCapabilities()`). To allow a new model or change a limit without waiting for a release, pass a `capabilities` option. Keyed maps (per-model limits, the `models` map) are merged, lists and scalars are replaced. Size, quality, prompt-length and file-size checks are skipped for models with no entry.
+
+```php
+$openai = (new AIFactory())->getAI('openai', [
+    'api_key' => getenv('OPENAI_API_KEY'),
+    'capabilities' => [
+        'models' => [
+            'chat'   => ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+            'vision' => ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+        ],
+        'image_sizes' => ['gpt-image-1' => ['1024x1024', 'auto']],
+        'audio_file_max_mb' => 25,
+    ],
+]);
+```
+
+You can also subclass the provider and override `getDefaultCapabilities()`.
 
 ### Model-Specific Limitations
 
@@ -371,18 +376,17 @@ try {
 
 ### Content Safety
 
-The framework automatically applies moderation to:
-- Chat messages (before sending)
-- Image generation prompts
-- TTS text input
-- Image editing prompts
+Before the API call, the framework sends these inputs to the moderation endpoint:
+- Chat and vision messages
+- Image generation and editing prompts
+- Text-to-speech text
+- Embedding input
 
-Content flagged by moderation will throw an exception before the API call.
+Flagged content throws an `AIException` and is not sent. Each check is an extra request. To skip automatic moderation, set the `moderate_input` provider option to `false`:
 
-## Best Practices
-
-1. **Use appropriate models**: Choose the right model for your use case (cost vs capability)
-2. **Handle rate limits**: Implement exponential backoff for production use
+```php
+$openai = (new AIFactory())->getAI('openai', ['api_key' => $apiKey, 'moderate_input' => false]);
+```
 
 ## Next Steps
 
