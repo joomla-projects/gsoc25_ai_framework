@@ -52,7 +52,7 @@ Pending tool calls are not saved, so finish them before storing.
 
 ## Streaming
 
-OpenAI, Anthropic and Ollama can stream replies as they are generated. `chatStream()` yields text deltas and returns the final `Response`:
+OpenAI, Anthropic, Ollama and Grok can stream replies as they are generated. `chatStream()` yields text deltas and returns the final `Response`:
 
 ```php
 $stream = $ai->chatStream('Write a haiku about Joomla');
@@ -119,7 +119,7 @@ In a [conversation](#conversations), `submitToolResults()` does the message hand
 
 ## JSON schema output
 
-`response_schema` constrains the reply to a JSON schema (sent as OpenAI `response_format`, Anthropic `output_config.format` or Ollama `format`). `getJson()` decodes the reply:
+`response_schema` constrains the reply to a JSON schema (sent as OpenAI and Grok `response_format`, Anthropic `output_config.format` or Ollama `format`). `getJson()` decodes the reply:
 
 ```php
 $response = $ai->chat('Extract the person: Ada Lovelace, 36', [
