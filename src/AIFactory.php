@@ -12,6 +12,7 @@ namespace Joomla\AI;
 use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\AI\Provider\AnthropicProvider;
 use Joomla\AI\Provider\OllamaProvider;
+use Joomla\AI\Provider\GeminiProvider;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\Http\HttpFactory;
@@ -36,6 +37,7 @@ class AIFactory
         'openai' => OpenAIProvider::class,
         'anthropic' => AnthropicProvider::class,
         'ollama' => OllamaProvider::class,
+        'gemini' => GeminiProvider::class,
     ];
 
     /**
