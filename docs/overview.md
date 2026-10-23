@@ -9,19 +9,20 @@ The AI package gives PHP applications one interface to several AI providers. You
 | **OpenAI** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Anthropic** | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | ✓ |
 | **Ollama** | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | ✓ | - | ✓ |
+| **Grok** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | ✓ |
 
 [Conversations](features.md#conversations), [limits](features.md#limits), [retries](features.md#retries) and [logging](features.md#logging-and-hooks) work with every provider.
 
 ## Architecture
 
 **AI Factory** ([`AIFactory`](../src/AIFactory.php))
-Creates providers by name (`openai`, `anthropic`, `ollama`) or class name. It is instantiable, so it can be registered in a DI container, and `registerProvider()` adds custom providers.
+Creates providers by name (`openai`, `anthropic`, `ollama`, `grok`) or class name. It is instantiable, so it can be registered in a DI container, and `registerProvider()` adds custom providers.
 
 **AI** ([`AI`](../src/AI.php))
 Wraps a provider: calls are passed through to it, and `conversation()` starts a [conversation](features.md#conversations).
 
 **Providers** ([`src/Provider/`](../src/Provider/))
-[`OpenAIProvider`](../src/Provider/OpenAIProvider.php), [`AnthropicProvider`](../src/Provider/AnthropicProvider.php) and [`OllamaProvider`](../src/Provider/OllamaProvider.php) build each provider's requests and turn its responses into a `Response`.
+[`OpenAIProvider`](../src/Provider/OpenAIProvider.php), [`AnthropicProvider`](../src/Provider/AnthropicProvider.php), [`OllamaProvider`](../src/Provider/OllamaProvider.php) and [`GrokProvider`](../src/Provider/GrokProvider.php) build each provider's requests and turn its responses into a `Response`. OpenAI and Grok share their Chat Completions code through [`OpenAICompatibleTrait`](../src/Provider/OpenAICompatibleTrait.php).
 
 **Abstract Provider** ([`AbstractProvider`](../src/AbstractProvider.php))
 Shared by all providers:

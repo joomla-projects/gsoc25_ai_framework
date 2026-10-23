@@ -26,7 +26,7 @@ Requires PHP 8.3 or higher. See [Getting Started](docs/getting-started.md) for d
 use Joomla\AI\AIFactory;
 
 $ai = (new AIFactory())->getAI('anthropic', [
-    'api_key' => getenv('ANTHROPIC_API_KEY'), // or 'openai' with an OpenAI key, or 'ollama' with no key
+    'api_key' => getenv('ANTHROPIC_API_KEY'), // or 'openai' / 'grok' with their key, or 'ollama' with no key
 ]);
 
 $response = $ai->chat('Write a haiku about Joomla.');
@@ -50,6 +50,6 @@ echo $response->getUsage()['total_tokens'];
 - **[Overview](docs/overview.md)**: architecture and supported providers
 - **[Getting Started](docs/getting-started.md)**: install, configure, first requests, error handling
 - **[Features](docs/features.md)**: conversations, streaming, tools, JSON output, limits, retries, logging
-- **Provider guides**: [OpenAI](docs/providers/openai.md), [Anthropic](docs/providers/anthropic.md), [Ollama](docs/providers/ollama.md)
+- **Provider guides**: [OpenAI](docs/providers/openai.md), [Anthropic](docs/providers/anthropic.md), [Ollama](docs/providers/ollama.md), [Grok](docs/providers/grok.md)
 
-Provider API references: [OpenAI](https://platform.openai.com/docs/api-reference), [Anthropic](https://platform.claude.com/docs), [Ollama](https://github.com/ollama/ollama/blob/main/docs/api.md).
+Provider API references: [OpenAI](https://platform.openai.com/docs/api-reference), [Anthropic](https://platform.claude.com/docs), [Ollama](https://github.com/ollama/ollama/blob/main/docs/api.md), [xAI](https://docs.x.ai/docs).

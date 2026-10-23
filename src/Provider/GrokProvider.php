@@ -13,108 +13,77 @@ use Joomla\AI\AbstractProvider;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
-use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\ChatInterface;
-use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
+use Joomla\AI\Interface\ProviderInterface;
+use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
+use Joomla\Http\Response as HttpResponse;
 
 /**
  * Grok (xAI) provider implementation.
  *
- * Grok uses an OpenAI-compatible API format with the base URL https://api.x.ai/v1.
+ * Uses xAI's OpenAI-compatible Chat Completions API at https://api.x.ai/v1.
  *
  * @since  __DEPLOY_VERSION__
  */
-class GrokProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ImageInterface, EmbeddingInterface, ModelInterface
+class GrokProvider extends AbstractProvider implements ProviderInterface, ChatInterface, StreamInterface, ToolInterface, ImageInterface, ModelInterface
 {
+    use OpenAICompatibleTrait;
+
     /**
-     * Custom base URL for API requests
+     * Default chat and vision model
      *
      * @var    string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
+    private const DEFAULT_MODEL = 'grok-4.7';
 
     /**
-     * Models that support chat capability.
+     * Default image generation model
      *
-     * @var    array
+     * @var    string
      * @since  __DEPLOY_VERSION__
      */
-    private const CHAT_MODELS = [
-        'grok-3',
-        'grok-3-fast',
-        'grok-3-mini',
-        'grok-3-mini-fast',
-        'grok-2',
-        'grok-2-latest',
-    ];
+    private const DEFAULT_IMAGE_MODEL = 'grok-imagine-image-2.0';
 
     /**
-     * Models that support vision capability.
+     * Base URL for API requests
      *
-     * @var    array
+     * @var    string
      * @since  __DEPLOY_VERSION__
      */
-    private const VISION_MODELS = [
-        'grok-2-vision',
-        'grok-2-vision-latest',
-    ];
-
-    /**
-     * Models that support image generation capability.
-     *
-     * @var    array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_MODELS = [
-        'grok-2-image',
-        'grok-2-image-latest',
-    ];
-
-    /**
-     * Models that support embedding capability.
-     *
-     * @var    array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const EMBEDDING_MODELS = [
-        'v1',
-    ];
+    private string $baseUrl;
 
     /**
      * Constructor.
      *
-     * @param   array|\ArrayAccess  $options     Provider options array.
-     * @param   HttpFactory         $httpFactory The http factory
+     * @param   array|\ArrayAccess  $options      Provider options array.
+     * @param   HttpFactory|null    $httpFactory  The http factory
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
-        $this->baseUrl = $this->getOption('base_url', 'https://api.x.ai/v1');
-
-        // Remove trailing slash if present
-        if (substr($this->baseUrl, -1) === '/') {
-            $this->baseUrl = rtrim($this->baseUrl, '/');
-        }
+        $this->baseUrl = rtrim((string) $this->getOption('base_url', 'https://api.x.ai/v1'), '/');
     }
 
     /**
-     * Check if Grok provider is supported/configured.
+     * Check if the Grok provider is supported.
      *
-     * @return  boolean  True if API key is available
+     * The API key comes from the api_key option and is checked when a request is made.
+     *
+     * @return  boolean  Always true
      * @since  __DEPLOY_VERSION__
      */
     public static function isSupported(): bool
     {
-        return !empty($_ENV['XAI_API_KEY']) ||
-               !empty(getenv('XAI_API_KEY'));
+        return true;
     }
 
     /**
@@ -129,223 +98,176 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     }
 
     /**
-     * Build HTTP headers for xAI API request.
+     * Get the default capability map for Grok.
+     * Override via the "capabilities" provider option or in a subclass.
      *
-     * @return  array  HTTP headers
-     * @since  __DEPLOY_VERSION__
+     * The lists are only used by isModelCapable(), getChatModels() and getImageModels();
+     * requests are not blocked for models missing from them.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
      */
-    private function buildHeaders(): array
+    protected function getDefaultCapabilities(): array
     {
-        $apiKey = $this->getApiKey();
+        $textModels = [
+            'grok-4.7',
+            'grok-4.6',
+            'grok-4.5',
+            'grok-4.3',
+            'grok-4.20-0309-reasoning',
+            'grok-4.20-0309-non-reasoning',
+            'grok-4.20-multi-agent-0309',
+            'grok-build-0.1',
+        ];
 
         return [
-            'Authorization' => 'Bearer ' . $apiKey,
-            'Content-Type' => 'application/json',
+            'models' => [
+                'chat'   => $textModels,
+                // Chat Completions accepts image input; xAI does not restrict it to certain text models
+                'vision' => $textModels,
+                'image'  => ['grok-imagine-image-2.0', 'grok-imagine-image', 'grok-imagine-image-quality'],
+            ],
+            'image_max_count' => 10,
         ];
     }
 
     /**
-     * Get the xAI API key.
-     *
-     * @return  string  The API key
-     * @throws  AuthenticationException  If API key is not found
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getApiKey(): string
-    {
-        $apiKey = $this->getOption('api_key') ??
-                  $_ENV['XAI_API_KEY'] ??
-                  getenv('XAI_API_KEY');
-
-        if (empty($apiKey)) {
-            throw new AuthenticationException(
-                $this->getName(),
-                ['message' => 'xAI API key not configured. Set XAI_API_KEY environment variable or provide api_key option.'],
-                401
-            );
-        }
-
-        return $apiKey;
-    }
-
-    /**
-     * Get the chat completions endpoint URL.
-     *
-     * @return  string  The endpoint URL
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getChatEndpoint(): string
-    {
-        return $this->baseUrl . '/chat/completions';
-    }
-
-    /**
-     * Get the image generation endpoint URL.
-     *
-     * @return  string  The endpoint URL
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getImageEndpoint(): string
-    {
-        return $this->baseUrl . '/images/generations';
-    }
-
-    /**
-     * Get the embeddings endpoint URL.
-     *
-     * @return  string  The endpoint URL
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getEmbeddingsEndpoint(): string
-    {
-        return $this->baseUrl . '/embeddings';
-    }
-
-    /**
-     * Get the models endpoint URL.
-     *
-     * @return  string  The endpoint URL
-     * @since  __DEPLOY_VERSION__
-     */
-    private function getModelsEndpoint(): string
-    {
-        return $this->baseUrl . '/models';
-    }
-
-    /**
-     * List available models from xAI.
+     * List the models available to the API key.
      *
      * @return  array
      * @since  __DEPLOY_VERSION__
      */
     public function getAvailableModels(): array
     {
-        $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest($this->getModelsEndpoint(), $headers);
+        $response = $this->makeGetRequest($this->baseUrl . '/models', $this->buildHeaders());
         $data = $this->parseJsonResponse($response->getBody());
+
+        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
 
         return array_column($data['data'], 'id');
     }
 
     /**
-     * Get models that support chat capability.
+     * Get the known chat models.
      *
-     * @return  array  Array of chat-capable model names
+     * @return  array
      * @since   __DEPLOY_VERSION__
      */
     public function getChatModels(): array
     {
-        return self::CHAT_MODELS;
+        return $this->getCapability('models', 'chat', []);
     }
 
     /**
-     * Get models that support vision capability.
+     * Get the known image generation models.
      *
-     * @return  array  Array of vision-capable model names
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getVisionModels(): array
-    {
-        return self::VISION_MODELS;
-    }
-
-    /**
-     * Get models that support image generation capability.
-     *
-     * @return  array  Array of image-capable model names
+     * @return  array
      * @since   __DEPLOY_VERSION__
      */
     public function getImageModels(): array
     {
-        return self::IMAGE_MODELS;
+        return $this->getCapability('models', 'image', []);
     }
 
     /**
-     * Get available embedding models for this provider.
+     * Check if a model supports a capability (chat, vision, image).
      *
-     * @return  array  Array of available embedding model names
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getEmbeddingModels(): array
-    {
-        return self::EMBEDDING_MODELS;
-    }
-
-    /**
-     * Check if a model supports a specific capability.
+     * @param   string  $model       The model name
+     * @param   string  $capability  The capability
      *
-     * @param   string  $model       The model name to check
-     * @param   string  $capability  The capability to check (chat, vision, image, embedding)
-     *
-     * @return  bool    True if model supports the capability
+     * @return  bool
      * @since   __DEPLOY_VERSION__
      */
     public function isModelCapable(string $model, string $capability): bool
     {
-        $capabilityMap = [
-            'chat' => self::CHAT_MODELS,
-            'vision' => self::VISION_MODELS,
-            'image' => self::IMAGE_MODELS,
-            'embedding' => self::EMBEDDING_MODELS,
-        ];
-
-        return $this->checkModelCapability($model, $capability, $capabilityMap);
+        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
     }
 
     /**
-     * Send a message to Grok and return response.
+     * Send a message to Grok and return the response.
+     *
+     * Options: model, messages, system, max_tokens, temperature, top_p, stop, frequency_penalty,
+     * presence_penalty, n, seed, tools, tool_choice, parallel_tool_calls, response_schema,
+     * stream, on_chunk. Some reasoning models reject sampling and penalty options.
      *
      * @param   string  $message  The message to send
      * @param   array   $options  Additional options for the request
      *
-     * @return  Response  The AI response object
+     * @return  Response
      * @since  __DEPLOY_VERSION__
      */
     public function chat(string $message, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
         $payload = $this->buildChatRequestPayload($message, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getChatEndpoint(),
-            json_encode($payload),
-            $headers
-        );
-
-        return $this->parseChatResponse($httpResponse->getBody());
+        return $this->parseChatCompletion((string) $this->postJson($this->getChatEndpoint(), $payload)->getBody());
     }
 
     /**
-     * Generate chat completion with vision capability and return Response.
+     * Stream a chat response. Yields text deltas; getReturn() gives the final Response.
      *
-     * @param   string  $message  The chat message about the image.
-     * @param   string  $image    Image URL or base64 encoded image.
-     * @param   array   $options  Additional options for the request.
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $this->assertNoToolsWhenStreaming($options);
+
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+
+        return yield from $this->streamChatCompletion($this->getChatEndpoint(), $payload, $this->buildHeaders());
+    }
+
+    /**
+     * Ask a question about an image.
+     *
+     * @param   string  $message  The question about the image
+     * @param   string  $image    An http(s) image URL or a base64 data URI (JPEG or PNG, up to 20 MiB)
+     * @param   array   $options  The same options as chat(), plus "detail" (auto, low, high)
      *
      * @return  Response
+     * @throws  InvalidArgumentException  If the image is not a URL or a JPEG/PNG data URI
      * @since  __DEPLOY_VERSION__
      */
     public function vision(string $message, string $image, array $options = []): Response
     {
-        $payload = $this->buildVisionRequestPayload($message, $image, $options);
+        $this->assertValidImage($image);
 
-        $headers = $this->buildHeaders();
+        $imageUrl = ['url' => $image];
 
-        $httpResponse = $this->makePostRequest(
-            $this->getChatEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        if (isset($options['detail'])) {
+            if (!in_array($options['detail'], ['auto', 'low', 'high'], true)) {
+                throw InvalidArgumentException::invalidParameter('detail', $options['detail'], 'grok', 'Detail must be "auto", "low" or "high".');
+            }
 
-        return $this->parseChatResponse($httpResponse->getBody());
+            $imageUrl['detail'] = $options['detail'];
+        }
+
+        $options['messages'] = [[
+            'role' => 'user',
+            'content' => [
+                ['type' => 'text', 'text' => $message],
+                ['type' => 'image_url', 'image_url' => $imageUrl],
+            ],
+        ]];
+
+        return $this->chat($message, $options);
     }
 
     /**
-     * Generate an image from a text prompt.
+     * Generate images from a text prompt.
      *
-     * @param   string  $prompt   Descriptive text prompt for the desired image.
-     * @param   array   $options  Additional options for the request.
+     * @param   string  $prompt   Description of the image
+     * @param   array   $options  model (default: the "image_model" provider option, else grok-imagine-image-2.0),
+     *                            n (1-10), response_format (url, b64_json)
      *
      * @return  Response
      * @since   __DEPLOY_VERSION__
@@ -354,452 +276,193 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     {
         $payload = $this->buildImageRequestPayload($prompt, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getImageEndpoint(),
-            json_encode($payload),
-            $headers
-        );
-
-        return $this->parseImageResponse($httpResponse->getBody(), $payload);
+        return $this->parseImageResponse((string) $this->postJson($this->getImageEndpoint(), $payload)->getBody(), $payload);
     }
 
     /**
-     * Edit an existing image with a text prompt.
+     * Image editing is not available in the xAI API.
      *
-     * Note: xAI Grok API does not currently support image editing.
-     * This method throws an exception indicating the limitation.
-     *
-     * @param   string  $imagePath  Path to the image file to modify.
-     * @param   string  $prompt     Text description of the desired modifications.
-     * @param   array   $options    Additional options for the request.
+     * @param   string|array  $imagePath  Path to the image
+     * @param   string        $prompt     Description of the change
+     * @param   array         $options    Options
      *
      * @return  Response
-     * @throws  ProviderException  Always, as this capability is not supported
+     * @throws  ProviderException  Always
      * @since   __DEPLOY_VERSION__
      */
-    public function editImage($imagePath, string $prompt, array $options = []): Response
+    public function editImage(string|array $imagePath, string $prompt, array $options = []): Response
     {
-        throw new ProviderException(
-            $this->getName(),
-            ['message' => 'Image editing is not supported by the Grok provider. Use generateImage() instead.']
-        );
+        throw new ProviderException($this->getName(), ['message' => 'Image editing is not supported by the Grok provider. Use generateImage() instead.']);
     }
 
     /**
-     * Create variations of an image.
+     * Image variations are not available in the xAI API.
      *
-     * Note: xAI Grok API does not currently support image variations.
-     * This method throws an exception indicating the limitation.
-     *
-     * @param   string  $imagePath  Path to the source image file.
-     * @param   array   $options    Additional options for the request.
+     * @param   string  $imagePath  Path to the image
+     * @param   array   $options    Options
      *
      * @return  Response
-     * @throws  ProviderException  Always, as this capability is not supported
+     * @throws  ProviderException  Always
      * @since   __DEPLOY_VERSION__
      */
     public function createImageVariation(string $imagePath, array $options = []): Response
     {
-        throw new ProviderException(
-            $this->getName(),
-            ['message' => 'Image variations are not supported by the Grok provider. Use generateImage() instead.']
-        );
+        throw new ProviderException($this->getName(), ['message' => 'Image variations are not supported by the Grok provider. Use generateImage() instead.']);
     }
 
     /**
-     * Create embeddings for the given input text(s).
+     * Build the chat completions payload.
      *
-     * @param   string|array  $input    Text string or array of texts to embed
-     * @param   string        $model    The embedding model to use
-     * @param   array         $options  Additional options
+     * @param   string  $message  The user message
+     * @param   array   $options  Request options
      *
-     * @return  Response
-     * @since   __DEPLOY_VERSION__
-     */
-    public function createEmbeddings($input, string $model, array $options = []): Response
-    {
-        $payload = $this->buildEmbeddingPayload($input, $model, $options);
-
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getEmbeddingsEndpoint(),
-            json_encode($payload),
-            $headers
-        );
-
-        return $this->parseEmbeddingResponse($httpResponse->getBody(), $payload);
-    }
-
-    /**
-     * Build payload for chat request.
-     *
-     * @param   string  $message  The user message to send
-     * @param   array   $options  Additional options
-     *
-     * @return  array   The request payload
+     * @return  array
      * @since  __DEPLOY_VERSION__
      */
-    private function buildChatRequestPayload(string $message, array $options = []): array
+    private function buildChatRequestPayload(string $message, array $options): array
     {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'grok-3-mini-fast');
+        if (isset($options['messages'])) {
+            if (!is_array($options['messages']) || $options['messages'] === []) {
+                throw InvalidArgumentException::invalidMessages('grok', 'Messages must be a non-empty array.');
+            }
 
-        $messages = $options['messages'] ?? [
-            [
-                'role' => 'user',
-                'content' => $message,
-            ],
-        ];
+            $this->validateMessages($options['messages']);
+            $messages = $options['messages'];
+        } else {
+            $messages = [['role' => 'user', 'content' => $message]];
+        }
 
         $payload = [
-            'model' => $model,
-            'messages' => $messages,
+            'model' => $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL),
+            'messages' => $this->prependSystemMessage($messages, $options),
         ];
 
-        if (isset($options['max_tokens'])) {
-            $payload['max_tokens'] = (int) $options['max_tokens'];
-        }
-
-        if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['top_p'])) {
-            $payload['top_p'] = (float) $options['top_p'];
+        foreach (['max_tokens' => 'int', 'n' => 'int', 'seed' => 'int', 'temperature' => 'float', 'top_p' => 'float', 'frequency_penalty' => 'float', 'presence_penalty' => 'float'] as $key => $type) {
+            if (isset($options[$key])) {
+                $payload[$key] = $type === 'int' ? (int) $options[$key] : (float) $options[$key];
+            }
         }
 
         if (isset($options['stop'])) {
             $payload['stop'] = $options['stop'];
         }
 
-        if (isset($options['frequency_penalty'])) {
-            $payload['frequency_penalty'] = (float) $options['frequency_penalty'];
-        }
-
-        if (isset($options['presence_penalty'])) {
-            $payload['presence_penalty'] = (float) $options['presence_penalty'];
-        }
-
-        if (isset($options['n'])) {
-            $payload['n'] = (int) $options['n'];
-        }
-
-        if (isset($options['stream'])) {
-            $payload['stream'] = (bool) $options['stream'];
-        }
-
-        return $payload;
+        return $this->addToolAndSchemaParameters($payload, $options);
     }
 
     /**
-     * Build payload for vision request.
+     * Build the image generation payload.
      *
-     * @param   string  $message  The chat message about the image
-     * @param   string  $image    Image URL or base64 encoded image
-     * @param   array   $options  Additional options
+     * @param   string  $prompt   The prompt
+     * @param   array   $options  Request options
      *
-     * @return  array   The request payload
-     * @since  __DEPLOY_VERSION__
-     */
-    private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
-    {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'grok-2-vision-latest');
-        $maxTokens = $options['max_tokens'] ?? 1024;
-
-        $imageUrl = $image;
-
-        $content = [
-            [
-                'type' => 'text',
-                'text' => $message,
-            ],
-            [
-                'type' => 'image_url',
-                'image_url' => [
-                    'url' => $imageUrl,
-                ],
-            ],
-        ];
-
-        $payload = [
-            'model' => $model,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => $content,
-                ],
-            ],
-            'max_tokens' => $maxTokens,
-        ];
-
-        if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['top_p'])) {
-            $payload['top_p'] = (float) $options['top_p'];
-        }
-
-        return $payload;
-    }
-
-    /**
-     * Build payload for image generation request.
-     *
-     * @param   string  $prompt   The image generation prompt
-     * @param   array   $options  Additional options
-     *
-     * @return  array  The request payload
+     * @return  array
+     * @throws  InvalidArgumentException  If an option is invalid
      * @since   __DEPLOY_VERSION__
      */
     private function buildImageRequestPayload(string $prompt, array $options): array
     {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'grok-2-image-latest');
-
+        // Not the chat default model: image generation needs an image model
         $payload = [
-            'model' => $model,
+            'model' => $options['model'] ?? $this->getOption('image_model', self::DEFAULT_IMAGE_MODEL),
             'prompt' => $prompt,
         ];
 
         if (isset($options['n'])) {
             $n = (int) $options['n'];
-            if ($n < 1 || $n > 10) {
-                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'grok', 'Parameter "n" must be between 1 and 10.', ['min_value' => 1, 'max_value' => 10]);
+            $max = (int) $this->getCapability('image_max_count', null, 10);
+
+            if ($n < 1 || $n > $max) {
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'grok', "Parameter \"n\" must be between 1 and $max.", ['min_value' => 1, 'max_value' => $max]);
             }
+
             $payload['n'] = $n;
         }
 
         if (isset($options['response_format'])) {
-            if (!in_array($options['response_format'], ['url', 'b64_json'])) {
+            if (!in_array($options['response_format'], ['url', 'b64_json'], true)) {
                 throw InvalidArgumentException::invalidParameter('response_format', $options['response_format'], 'grok', 'Response format must be either "url" or "b64_json".', ['valid_values' => ['url', 'b64_json']]);
             }
+
             $payload['response_format'] = $options['response_format'];
         }
 
-        if (isset($options['size'])) {
-            $payload['size'] = $options['size'];
-        }
-
         return $payload;
     }
 
     /**
-     * Build request payload for embeddings.
+     * Check a vision image: an http(s) URL or a JPEG/PNG base64 data URI.
      *
-     * @param   string|array  $input    Text input(s) to embed
-     * @param   string        $model    The embedding model to use
-     * @param   array         $options  Additional options
+     * @param   string  $image  The image
      *
-     * @return  array
+     * @throws  InvalidArgumentException
      * @since   __DEPLOY_VERSION__
      */
-    private function buildEmbeddingPayload($input, string $model, array $options): array
+    private function assertValidImage(string $image): void
     {
-        $payload = [
-            'input' => $input,
-            'model' => $model,
-        ];
-
-        if (isset($options['encoding_format'])) {
-            if (!in_array($options['encoding_format'], ['float', 'base64'])) {
-                throw InvalidArgumentException::invalidParameter('encoding_format', $options['encoding_format'], 'grok', "Encoding format must be 'float' or 'base64'.");
-            }
-            $payload['encoding_format'] = $options['encoding_format'];
+        if (preg_match('#^https?://#i', $image) && filter_var($image, FILTER_VALIDATE_URL)) {
+            return;
         }
 
-        if (isset($options['dimensions'])) {
-            $payload['dimensions'] = (int) $options['dimensions'];
+        if (preg_match('#^data:image/(jpeg|jpg|png);base64,#i', $image)) {
+            return;
         }
 
-        return $payload;
+        throw InvalidArgumentException::invalidParameter('image', substr($image, 0, 100), 'grok', 'Image must be an http(s) URL or a JPEG/PNG base64 data URI.');
     }
 
     /**
-     * Parse xAI chat API response into unified Response object.
+     * POST a JSON payload with the standard headers.
      *
-     * @param   string  $responseBody  The JSON response body
+     * @param   string  $endpoint  The endpoint URL
+     * @param   array   $payload   The payload
      *
-     * @return  Response  Unified response object
-     * @since  __DEPLOY_VERSION__
+     * @return  HttpResponse
+     * @throws  ProviderException  If the payload cannot be encoded
+     * @since   __DEPLOY_VERSION__
      */
-    private function parseChatResponse(string $responseBody): Response
+    private function postJson(string $endpoint, array $payload): HttpResponse
     {
-        $data = $this->parseJsonResponse($responseBody);
+        $json = json_encode($payload);
 
-        if (isset($data['error'])) {
-            throw new ProviderException($this->getName(), $data);
+        if ($json === false) {
+            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
         }
 
-        $content = $data['choices'][0]['message']['content'] ?? '';
-
-        $statusCode = $this->determineAIStatusCode($data);
-
-        $metadata = [
-            'model' => $data['model'],
-            'usage' => $data['usage'] ?? [],
-            'finish_reason' => $data['choices'][0]['finish_reason'],
-            'created' => $data['created'] ?? time(),
-            'id' => $data['id'],
-            'choices' => $data['choices'],
-        ];
-
-        return new Response(
-            $content,
-            $this->getName(),
-            $metadata,
-            $statusCode
-        );
+        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
     }
 
     /**
-     * Parse xAI Image API response into unified Response object.
+     * Build the HTTP headers.
      *
-     * @param   string  $responseBody  The JSON response body
-     * @param   array   $payload       The original request payload
-     *
-     * @return  Response  Unified response object
+     * @return  array
      * @since  __DEPLOY_VERSION__
      */
-    private function parseImageResponse(string $responseBody, array $payload): Response
+    private function buildHeaders(): array
     {
-        $data = $this->parseJsonResponse($responseBody);
+        $apiKey = $this->getOption('api_key');
 
-        if (isset($data['error'])) {
-            throw new ProviderException($this->getName(), $data);
+        if (empty($apiKey)) {
+            throw new AuthenticationException(
+                $this->getName(),
+                ['message' => 'xAI API key not configured. Provide the api_key option.'],
+                401
+            );
         }
 
-        $images = [];
-        $responseFormat = '';
-
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $imageData) {
-                $imageItem = [];
-
-                if (isset($imageData['url'])) {
-                    $imageItem['url'] = $imageData['url'];
-                    $responseFormat = 'url';
-                }
-
-                if (isset($imageData['b64_json'])) {
-                    $imageItem['b64_json'] = $imageData['b64_json'];
-                    $responseFormat = 'b64_json';
-                }
-
-                if (isset($imageData['revised_prompt'])) {
-                    $imageItem['revised_prompt'] = $imageData['revised_prompt'];
-                }
-
-                $images[] = $imageItem;
-            }
-        }
-
-        $content = '';
-        if ($responseFormat === 'url') {
-            $urls = array_column($images, 'url');
-            $content = count($urls) === 1 ? $urls[0] : json_encode($urls, JSON_PRETTY_PRINT);
-        } elseif ($responseFormat === 'b64_json') {
-            $base64Data = array_column($images, 'b64_json');
-            $content = count($base64Data) === 1 ? $base64Data[0] : json_encode($base64Data, JSON_PRETTY_PRINT);
-        }
-
-        $metadata = [
-            'model' => $data['model'] ?? $payload['model'],
-            'created' => $data['created'] ?? time(),
-            'response_format' => $responseFormat,
-            'image_count' => count($images),
-            'images' => $images,
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
         ];
-
-        if (isset($data['usage'])) {
-            $metadata['usage'] = $data['usage'];
-        }
-
-        return new Response(
-            $content,
-            $this->getName(),
-            $metadata,
-            200
-        );
     }
 
-    /**
-     * Parse xAI Embeddings API response into unified Response object.
-     *
-     * @param   string  $responseBody  The JSON response body
-     * @param   array   $payload       The original request payload
-     *
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
-     */
-    private function parseEmbeddingResponse(string $responseBody, array $payload): Response
+    private function getChatEndpoint(): string
     {
-        $data = $this->parseJsonResponse($responseBody);
-
-        if (isset($data['error'])) {
-            throw new ProviderException($this->getName(), $data);
-        }
-
-        $embeddings = [];
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $embeddingData) {
-                $embeddings[] = [
-                    'embedding' => $embeddingData['embedding'],
-                    'index' => $embeddingData['index'],
-                    'object' => $embeddingData['object'],
-                ];
-            }
-        }
-
-        $contentData = count($embeddings) === 1 ? $embeddings[0]['embedding'] : $embeddings;
-        $content = json_encode($contentData);
-
-        $metadata = [
-            'model' => $data['model'] ?? $payload['model'],
-            'object' => $data['object'] ?? 'list',
-            'embedding_count' => count($embeddings),
-            'encoding_format' => $payload['encoding_format'] ?? 'float',
-            'input_type' => is_array($payload['input']) ? 'array' : 'string',
-            'raw_embeddings' => $embeddings,
-        ];
-
-        if (isset($data['usage'])) {
-            $metadata['usage'] = $data['usage'];
-        }
-
-        return new Response(
-            $content,
-            $this->getName(),
-            $metadata,
-            200
-        );
+        return $this->baseUrl . '/chat/completions';
     }
 
-    /**
-     * Determine status code based on finish_reason.
-     *
-     * @param   array  $data  Parsed response
-     *
-     * @return  int  Status code
-     * @since  __DEPLOY_VERSION__
-     */
-    private function determineAIStatusCode(array $data): int
+    private function getImageEndpoint(): string
     {
-        $finishReason = $data['choices'][0]['finish_reason'] ?? null;
-
-        switch ($finishReason) {
-            case 'stop':
-                return 200;
-            case 'length':
-                return 206;
-            case 'content_filter':
-                return 422;
-            case 'tool_calls':
-            case 'function_call':
-                return 202;
-            default:
-                return 200;
-        }
+        return $this->baseUrl . '/images/generations';
     }
 }
