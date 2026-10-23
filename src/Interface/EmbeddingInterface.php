@@ -28,7 +28,7 @@ interface EmbeddingInterface
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function createEmbeddings($input, string $model, array $options = []): Response;
+    public function createEmbeddings(string|array $input, string $model, array $options = []): Response;
 
     /**
      * Get available embedding models for this provider.

@@ -1,115 +1,71 @@
-## Overview
+# Overview
 
-The AI package provides an abstraction layer to access the services of several AI providers. It provides a unified, provider-agnostic interface for integrating multiple AI services into your applications. Instead of learning different SDKs and handling varying response formats, you write code once and switch providers by changing configuration.
-
-Official provider API references:
-- OpenAI: https://platform.openai.com/docs/api-reference
-- Anthropic: https://docs.anthropic.com/claude/docs
-- Ollama: https://github.com/ollama/ollama/blob/main/docs/api.md
+The AI package gives PHP applications one interface to several AI providers. You write code once and switch providers by changing configuration; the framework handles each provider's request format, authentication, responses and errors.
 
 ## Supported Providers
 
-| Provider | Chat | Vision | Images | Audio | Embeddings | Moderation | Models |
-|----------|------|--------|---------|-------|------------|------------|---------|
-| **OpenAI** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Anthropic** | ✓ | ✓ | - | - | - | - | ✓ |
-| **Ollama** | ✓ | - | - | - | - | - | ✓ |
+| Provider | Chat | Streaming | Vision | Tools | JSON schema | Images | Audio | Embeddings | Moderation | Models |
+|----------|------|-----------|--------|-------|-------------|--------|-------|------------|------------|--------|
+| **OpenAI** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Anthropic** | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | - | - | ✓ |
+| **Ollama** | ✓ | ✓ | ✓ | ✓ | ✓ | - | - | ✓ | - | ✓ |
+
+[Conversations](features.md#conversations), [limits](features.md#limits), [retries](features.md#retries) and [logging](features.md#logging-and-hooks) work with every provider.
 
 ## Architecture
 
-### Core Components
+**AI Factory** ([`AIFactory`](../src/AIFactory.php))
+Creates providers by name (`openai`, `anthropic`, `ollama`) or class name. It is instantiable, so it can be registered in a DI container, and `registerProvider()` adds custom providers.
 
-**Interfaces** (`/src/Interface/`)
-Define the interfaces that providers implement:
-- [`ProviderInterface`](../src/Interface/ProviderInterface.php) - Base provider contract
-- [`ChatInterface`](../src/Interface/ChatInterface.php) - Text conversation
-- [`ImageInterface`](../src/Interface/ImageInterface.php) - Image generation, editing, variations
-- [`AudioInterface`](../src/Interface/AudioInterface.php) - Speech synthesis, transcription, translation
-- [`EmbeddingInterface`](../src/Interface/EmbeddingInterface.php) - Vector embeddings
-- [`ModelInterface`](../src/Interface/ModelInterface.php) - Model management and capabilities
-- [`ModerationInterface`](../src/Interface/ModerationInterface.php) - Content safety
+**AI** ([`AI`](../src/AI.php))
+Wraps a provider: calls are passed through to it, and `conversation()` starts a [conversation](features.md#conversations).
 
-**Abstract Provider** (`/src/AbstractProvider.php`)
-Centralizes common functionality:
-- HTTP client management (GET, POST, DELETE, multipart)
-- Error mapping (401→Auth, 429→RateLimit/Quota, etc.)
-- JSON response parsing
+**Providers** ([`src/Provider/`](../src/Provider/))
+[`OpenAIProvider`](../src/Provider/OpenAIProvider.php), [`AnthropicProvider`](../src/Provider/AnthropicProvider.php) and [`OllamaProvider`](../src/Provider/OllamaProvider.php) build each provider's requests and turn its responses into a `Response`.
 
-**AI Factory** (`/src/AIFactory.php`)
-Centralized provider instantiation and management:
-- `getAI($provider, $options)` - Creates provider instances by name
-- Provider registry with supported providers ('openai', 'anthropic', 'ollama')
-- Simplifies provider switching and configuration management
+**Abstract Provider** ([`AbstractProvider`](../src/AbstractProvider.php))
+Shared by all providers:
+- HTTP requests (JSON, multipart, streaming), timeouts and HTTP options
+- Retries with backoff, logging and hooks
+- Limit checks
+- Mapping HTTP errors to exceptions and validating responses
 
-**AI Class** (`/src/AI.php`)
-- Wrapper providing access to all AI capabilities.
+**Interfaces** ([`src/Interface/`](../src/Interface/))
+What a provider can do: [`ChatInterface`](../src/Interface/ChatInterface.php), [`StreamInterface`](../src/Interface/StreamInterface.php), [`ToolInterface`](../src/Interface/ToolInterface.php), [`ImageInterface`](../src/Interface/ImageInterface.php), [`AudioInterface`](../src/Interface/AudioInterface.php), [`EmbeddingInterface`](../src/Interface/EmbeddingInterface.php), [`ModerationInterface`](../src/Interface/ModerationInterface.php), [`ModelInterface`](../src/Interface/ModelInterface.php). Check them with `instanceof` before using a capability.
 
-**Response Object** (`/src/Response/Response.php`)
-Unified response wrapper that extends Joomla's HttpResponse:
-- `getContent()` - Primary result (text, base64 image, binary audio)
-- `getMetadata()` - Normalized provider details (model, usage, formats)
-- `getProvider()` - Provider name ("OpenAI", "Anthropic", "Ollama")
-- `saveFile($path)` - Method to save the generated output
+**Response** ([`Response`](../src/Response/Response.php))
+The same object for every provider:
+- `getContent()`: the result (text, base64 image, binary audio)
+- `getUsage()`, `getFinishReason()`: token usage and finish reason, normalised across providers
+- `getToolCalls()`, `getJson()`, `getEmbeddings()`: tool requests, JSON output, embedding vectors
+- `getMetadata()`: everything the provider returned, in its own format
+- `saveFile($path)`: save images, audio or text
 
-**Providers** (`/src/Provider/`)
-- [`OpenAIProvider`](../src/Provider/OpenAIProvider.php) - Implements methods related to OpenAI
-- [`AnthropicProvider`](../src/Provider/AnthropicProvider.php) - Implements methods related to Anthropic
-- [`OllamaProvider`](../src/Provider/OllamaProvider.php) - Implements methods related to Ollama
+**Conversation** ([`Conversation`](../src/Conversation/Conversation.php))
+Keeps the message history of a multi-turn chat.
 
-### Exception Hierarchy
+**Limits** ([`src/Limit/`](../src/Limit/))
+`Limit::requests()` and `Limit::tokens()`; usage is kept in files so limits hold across web requests.
 
-All exceptions inherit from [`AIException`](../src/Exception/AIException.php):
-- [`AuthenticationException`](../src/Exception/AuthenticationException.php)
-- [`RateLimitException`](../src/Exception/RateLimitException.php)
-- [`QuotaExceededException`](../src/Exception/QuotaExceededException.php)
-- [`ProviderException`](../src/Exception/ProviderException.php)
-- [`InvalidArgumentException`](../src/Exception/InvalidArgumentException.php)
-- [`UnserializableResponseException`](../src/Exception/UnserializableResponseException.php)
+## Exceptions
 
-## Key Design Principles
+All exceptions extend [`AIException`](../src/Exception/AIException.php):
 
-### Provider Abstraction
-```php
-// Same interface, different providers
-$openai = AIFactory::getAI('openai', ['api_key' => $key]);
-$anthropic = AIFactory::getAI('anthropic', ['api_key' => $anthropic_key]);
+| Exception | When |
+|-----------|------|
+| [`AuthenticationException`](../src/Exception/AuthenticationException.php) | Missing or invalid API key (401/403), Ollama server not running |
+| [`RateLimitException`](../src/Exception/RateLimitException.php) | The provider's rate limit (429), after retries |
+| [`QuotaExceededException`](../src/Exception/QuotaExceededException.php) | Out of credits or quota |
+| [`LimitExceededException`](../src/Exception/LimitExceededException.php) | Blocked by one of your [limits](features.md#limits); nothing was sent |
+| [`InvalidArgumentException`](../src/Exception/InvalidArgumentException.php) | Invalid option, model or file, caught before sending |
+| [`UnserializableResponseException`](../src/Exception/UnserializableResponseException.php) | The provider returned a response that could not be read |
+| [`ProviderException`](../src/Exception/ProviderException.php) | Any other provider error |
 
-// Identical usage
-$response1 = $openai->chat("Hello!");
-$response2 = $anthropic->chat("Hello!");
-```
+## Model selection
 
-### Unified Response Format
-```php
-$response = $provider->chat("Hello!");
-echo $response->getContent();      // "Hello! How can I help you today?"
-echo $response->getProvider();     // "OpenAI"
-$metadata = $response->getMetadata();
-echo $metadata['model'];           // "gpt-4o"
+The model for a call is chosen in this order:
 
-```
-
-### Default Model Management
-Flexible precedence system for model selection with four levels of fallback:
-
-1. **Per-call `options['model']`** - Highest priority
-2. **Provider default via `setDefaultModel()`** - Session-level default
-3. **Constructor option `'model'`** - Provider-level configuration
-4. **Method-specific fallback** - Built-in defaults per capability
-
-### File Handling
-Streamlined output persistence:
-```php
-// Images
-$image = $provider->generateImage("A sunset");
-$image->saveFile('sunset.png');
-
-// Audio
-$audio = $provider->speech("Hello world");
-$audio->saveFile('greeting.mp3');
-```
-
-## Next Steps
-
-- **[Getting Started](getting-started.md)** - Installation and first requests
-- **[Provider Guides](providers/)** - Provider-specific documentation
+1. `model` in the call's options
+2. The default set with `setDefaultModel()`
+3. The `model` option given when the provider was created
+4. The provider's built-in default for that capability

@@ -43,8 +43,8 @@ class ChatTest extends TestCase
             ],
         ]);
 
-        $httpFactoryMock  = $this->createMock(HttpFactory::class);
-        $httpClientMock   = $this->createMock(Http::class);
+        $httpFactoryMock  = $this->createStub(HttpFactory::class);
+        $httpClientMock   = $this->createStub(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
@@ -56,7 +56,7 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $chatResponse);
 
-        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
         $response = $provider->chat('Hello! How are you?', ['model' => 'gpt-4o-mini']);
 
         $this->assertEquals(200, $response->getStatusCode());
@@ -70,9 +70,9 @@ class ChatTest extends TestCase
     {
         // Test 2: Test chat method raises ProviderException on server error
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -89,7 +89,7 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $serverErrorResponse);
 
-        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
 
         $this->expectException(ProviderException::class);
         $this->expectExceptionMessage('Internal server error');
@@ -100,9 +100,9 @@ class ChatTest extends TestCase
     {
         // Test 3: Test chat method raises AuthenticationException on unauthorized access
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -120,7 +120,7 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $unauthorizedResponse);
 
-        $provider = new OpenAIProvider(['api_key' => 'bad-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'bad-key', 'max_retries' => 0], $httpFactoryMock);
 
         $this->expectException(AuthenticationException::class);
         $this->expectExceptionMessage('Incorrect API key provided');
@@ -131,9 +131,9 @@ class ChatTest extends TestCase
     {
         // Test 4: Test chat method raises RateLimitException on too many requests
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -150,7 +150,7 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $rateLimitResponse);
 
-        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
 
         $this->expectException(RateLimitException::class);
         $this->expectExceptionMessage('Rate limit exceeded');
@@ -161,9 +161,9 @@ class ChatTest extends TestCase
     {
         // Test 5: Test chat method raises UnserializableResponseException on invalid JSON
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $moderationResponse = $this->createJsonResponse([
             'id' => 'modr-test',
@@ -176,10 +176,33 @@ class ChatTest extends TestCase
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $invalidJson);
 
-        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
 
         $this->expectException(UnserializableResponseException::class);
         $this->expectExceptionMessage('Syntax error');
+        $provider->chat('Hello!', ['model' => 'gpt-4o-mini']);
+    }
+
+    public function testChatRaisesUnserializableResponseWhenChoicesMissing()
+    {
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
+
+        $moderationResponse = $this->createJsonResponse([
+            'id' => 'modr-test',
+            'model' => 'text-moderation-001',
+            'results' => [['flagged' => false]],
+        ]);
+
+        $malformed = $this->createJsonResponse(['id' => 'chatcmpl-broken', 'object' => 'chat.completion']);
+
+        $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $malformed);
+
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
+
+        $this->expectException(UnserializableResponseException::class);
+        $this->expectExceptionMessage("Missing field 'choices.0'");
         $provider->chat('Hello!', ['model' => 'gpt-4o-mini']);
     }
 
@@ -219,12 +242,12 @@ class ChatTest extends TestCase
             ],
         ]);
 
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock  = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock  = $this->createStub(Http::class);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls($moderationResponse, $chatResponse);
 
-        $provider = new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
 
         $response = $provider->chat('Please return audio as base64.', ['model' => 'gpt-4o-mini']);
 

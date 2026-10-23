@@ -62,7 +62,7 @@ require_once 'vendor/autoload.php';
 use Joomla\AI\AIFactory;
 
 // Create provider instance
-$openai = AIFactory::getAI('openai', [
+$openai = (new AIFactory())->getAI('openai', [
     'api_key' => getenv('OPENAI_API_KEY')
 ]);
 
@@ -85,9 +85,9 @@ use Joomla\AI\AIFactory;
 
 // Configure multiple providers
 $providers = [
-    'openai' => $openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]),
-    'anthropic' => nAIFactory::getAI('anthropic', ['api_key' => getenv('ANTHROPIC_API_KEY')]),
-    'ollama' => AIFactory::getAI('ollama', []) // Local server, no API key needed
+    'openai' => $openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]),
+    'anthropic' => (new AIFactory())->getAI('anthropic', ['api_key' => getenv('ANTHROPIC_API_KEY')]),
+    'ollama' => (new AIFactory())->getAI('ollama', []) // Local server, no API key needed
 ];
 
 $question = "What is Joomla?";
@@ -110,7 +110,7 @@ foreach ($providers as $name => $provider) {
 ```php
 use Joomla\AI\AIFactory;
 
-$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Generate an image
 $image = $openai->generateImage("A beautiful sunset over mountains", [
@@ -153,7 +153,7 @@ echo "Vision analysis: " . $vision->getContent() . "\n";
 Avoid repeating model names by setting defaults:
 
 ```php
-$openai = AIFactory::getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
+$openai = (new AIFactory())->getAI('openai', ['api_key' => getenv('OPENAI_API_KEY')]);
 
 // Set a default model for all chat requests
 $openai->setDefaultModel('gpt-4o-mini');
@@ -174,45 +174,48 @@ $openai->unsetDefaultModel();
 
 ## Error Handling
 
-The framework provides specific exceptions that are inherited from [`AIException`](../src/Exception/AIException.php):
+All framework exceptions extend [`AIException`](../src/Exception/AIException.php). The [overview](overview.md#exceptions) lists when each one is thrown.
 
 ```php
+use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
-use Joomla\AI\Exception\RateLimitException;
-use Joomla\AI\Exception\QuotaExceededException;
 use Joomla\AI\Exception\InvalidArgumentException;
-use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Exception\LimitExceededException;
+use Joomla\AI\Exception\QuotaExceededException;
+use Joomla\AI\Exception\RateLimitException;
 
 try {
     $response = $openai->chat("Hello!");
     echo $response->getContent();
 } catch (AuthenticationException $e) {
     echo "Authentication failed: Check your API key\n";
+} catch (LimitExceededException $e) {
+    echo "Usage limit reached, try again in " . ceil($e->getRetryAfter()) . " seconds\n";
 } catch (RateLimitException $e) {
-    echo "Rate limited: Please wait before trying again\n";
+    echo "The provider is rate limiting requests, try again later\n";
 } catch (QuotaExceededException $e) {
     echo "Quota exceeded: Check your billing\n";
 } catch (InvalidArgumentException $e) {
     echo "Invalid input: " . $e->getMessage() . "\n";
-} catch (ProviderException $e) {
+} catch (AIException $e) {
     echo "Provider error: " . $e->getMessage() . "\n";
-} catch (Exception $e) {
-    echo "Unexpected error: " . $e->getMessage() . "\n";
 }
 ```
+
+Rate limits and temporary provider errors are retried automatically before an exception is thrown (see [Retries](features.md#retries)).
 
 ## Local Development with Ollama
 
 For local AI without API costs:
 
-1. **Install Ollama**: Download from https://ollama.ai/
+1. **Install Ollama**: Download from https://ollama.com/
 2. **Pull a model**: `ollama pull llama3`
 3. **Use in your code**:
 
 ```php
 use Joomla\AI\AIFactory;
 
-$ollama = AIFactory::getAI('ollama');
+$ollama = (new AIFactory())->getAI('ollama');
 
 $response = $ollama->chat("Hello!", ['model' => 'llama3']);
 echo $response->getContent();
@@ -220,36 +223,30 @@ echo $response->getContent();
 
 ## Response Object
 
-All methods return a unified [`Response`](../src/Response/Response.php) object:
+All methods return the same [`Response`](../src/Response/Response.php) object, whichever provider you use:
 
 ```php
 $response = $provider->chat("Hello!");
 
-// Primary content
-echo $response->getContent();
+echo $response->getContent();       // the text (or base64 image, binary audio)
+echo $response->getFinishReason();  // "stop", "length", "content_filter" or "tool_calls"
+print_r($response->getUsage());     // ['input_tokens' => .., 'output_tokens' => .., 'total_tokens' => ..]
+echo $response->getProvider();      // "OpenAI", "Anthropic" or "Ollama"
 
-// Provider metadata (model, usage, etc.)
-$metadata = $response->getMetadata();
-print_r($metadata);
+print_r($response->getMetadata());  // everything the provider returned, in its own format
 
-// Provider name
-echo $response->getProvider(); // "OpenAI", "Anthropic", or "Ollama"
-
-// Save files (for images, audio)
-$response->saveFile('output.png');
+$response->saveFile('output.txt');  // images, audio and text
 ```
 
 ## Next Steps
 
-Now that you have the basics working:
-
-- **[Provider Guides](providers/)** - Provider-specific features and limitations
+- **[Features](features.md)**: conversations, streaming, tool calling, JSON output, limits, retries and logging
+- **[Provider Guides](providers/)**: provider-specific options and constraints
 
 ## Troubleshooting
 
 **API Key Issues:**
-- Ensure environment variables are set correctly
-- Restart your terminal/web server after setting environment variables
+- The API key is only read from the `api_key` option. If you load it from an environment variable, check that the variable is set for your web server or CLI process.
 - Check that your API keys have sufficient credits/permissions
 
 **Model Issues:**
