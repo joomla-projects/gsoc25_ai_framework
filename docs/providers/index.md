@@ -1,3 +1,4 @@
 * [OpenAI Provider](openai.md)
 * [Anthropic Provider](anthropic.md)
 * [Ollama Provider](ollama.md)
+* [Groq Provider](groq.md)
