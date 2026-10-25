@@ -7,6 +7,7 @@ use Joomla\AI\AIFactory;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Provider\AnthropicProvider;
+use Joomla\AI\Provider\GroqProvider;
 use Joomla\AI\Provider\OllamaProvider;
 use Joomla\AI\Provider\OpenAIProvider;
 use Joomla\AI\Tests\Stub\BrokenProvider;
@@ -25,6 +26,7 @@ class AIFactoryTest extends TestCase
             'openai' => ['openai', OpenAIProvider::class],
             'anthropic' => ['anthropic', AnthropicProvider::class],
             'ollama' => ['ollama', OllamaProvider::class],
+            'groq' => ['groq', GroqProvider::class],
             'case-insensitive' => ['OpenAI', OpenAIProvider::class],
         ];
     }
@@ -45,7 +47,7 @@ class AIFactoryTest extends TestCase
             $this->fail('Expected ProviderException');
         } catch (ProviderException $e) {
             $this->assertSame('INVALID_PROVIDER', $e->getProviderErrorCode());
-            $this->assertStringContainsString('openai, anthropic, ollama', $e->getMessage());
+            $this->assertStringContainsString('openai, anthropic, ollama, groq', $e->getMessage());
         }
     }
 
@@ -58,7 +60,7 @@ class AIFactoryTest extends TestCase
         $this->assertSame($factory, $factory->registerProvider('Custom', TestProvider::class));
 
         $this->assertTrue($factory->isProviderAvailable('custom'));
-        $this->assertSame(['openai', 'anthropic', 'ollama', 'custom'], $factory->getAvailableProviders());
+        $this->assertSame(['openai', 'anthropic', 'ollama', 'groq', 'custom'], $factory->getAvailableProviders());
         $this->assertInstanceOf(TestProvider::class, $factory->getAI('CUSTOM')->getProvider());
     }
 

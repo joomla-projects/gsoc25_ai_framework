@@ -862,6 +862,13 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
                 $mimeType = $this->detectImageMimeType($value);
                 $filename = $data['_mask_filename'] ?? 'mask.' . $this->getExtensionFromMimeType($mimeType);
                 $postData .= $this->buildMultipartFilePart($boundary, 'mask', $filename, $mimeType, $value);
+            } elseif (is_array($value)) {
+                // Lists are sent as repeated "name[]" fields, e.g. timestamp_granularities[]
+                foreach ($value as $item) {
+                    $postData .= "--{$boundary}\r\n";
+                    $postData .= "Content-Disposition: form-data; name=\"{$key}[]\"\r\n\r\n";
+                    $postData .= $item . "\r\n";
+                }
             } else {
                 // Handle regular form fields
                 $postData .= "--{$boundary}\r\n";
