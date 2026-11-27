@@ -387,8 +387,10 @@ trait OpenAICompatibleTrait
             $model = $data['model'] ?? $model;
             $id = $data['id'] ?? $id;
 
-            if (is_array($data['usage'] ?? null)) {
-                $usage = $data['usage'];
+            // Groq reports streamed usage in x_groq.usage
+            $chunkUsage = $data['usage'] ?? $data['x_groq']['usage'] ?? null;
+            if (is_array($chunkUsage)) {
+                $usage = $chunkUsage;
             }
 
             $choice = $data['choices'][0] ?? null;
