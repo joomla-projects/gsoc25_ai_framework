@@ -12,6 +12,7 @@ namespace Joomla\AI;
 use Joomla\Http\Http;
 use Joomla\Http\HttpFactory;
 use Joomla\Http\Response as HttpResponse;
+use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\LimitExceededException;
@@ -1380,23 +1381,22 @@ abstract class AbstractProvider implements ProviderInterface, LoggerAwareInterfa
     }
 
     /**
-     * Apply moderation to the input if the provider implements ModerationInterface.
-     * Can be disabled with the "moderate_input" provider option.
+     * Throw if the input is flagged by moderation. Only applies to providers implementing
+     * ModerationInterface, and can be disabled with the "moderate_input" provider option.
      *
-     * @param   string|array  $input    The input to moderate (text or images)
-     * @param   array         $options  Additional options for moderation
+     * @param   string|array  $input  Text or multimodal input; empty input is not checked
      *
-     * @return  bool
+     * @throws  AIException  If the content is flagged
      * @since   __DEPLOY_VERSION__
      */
-    protected function moderateInput(string|array $input, array $options = []): bool
+    protected function assertNotFlagged(string|array $input): void
     {
-        // Check if the provider supports moderation and it is enabled
-        if (!($this instanceof ModerationInterface) || !$this->getOption('moderate_input', true)) {
-            return false;
+        if ($input === '' || $input === [] || !($this instanceof ModerationInterface) || !$this->getOption('moderate_input', true)) {
+            return;
         }
 
-        $moderationResult = $this->moderate($input, $options);
-        return $this->isContentFlagged($moderationResult);
+        if ($this->isContentFlagged($this->moderate($input))) {
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
+        }
     }
 }

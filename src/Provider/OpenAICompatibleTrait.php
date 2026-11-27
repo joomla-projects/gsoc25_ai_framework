@@ -9,14 +9,19 @@
 
 namespace Joomla\AI\Provider;
 
+use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Response\Response;
+use Joomla\Http\Response as HttpResponse;
 
 /**
- * Shared code for providers with an OpenAI-compatible Chat Completions API (OpenAI, Grok):
- * response parsing, streaming, tool calls, JSON schema output and usage.
+ * Shared code for providers with an OpenAI-compatible Chat Completions API (OpenAI, Grok, Groq):
+ * requests, response parsing, streaming, tool calls, JSON schema output and usage.
+ *
+ * Classes using it set the $baseUrl property and implement buildChatRequestPayload(); they can
+ * replace any of the other methods with their own.
  *
  * @since  __DEPLOY_VERSION__
  */
@@ -422,5 +427,216 @@ trait OpenAICompatibleTrait
             $metadata,
             $this->determineAIStatusCode(['choices' => [['finish_reason' => $finishReason]]])
         ));
+    }
+
+    /**
+     * Build the chat completions payload. Implemented by each provider.
+     *
+     * @param   string  $message  The user message, used when no "messages" option is given
+     * @param   array   $options  Request options; "stream" is true when called from chatStream()
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    abstract private function buildChatRequestPayload(string $message, array $options): array;
+
+    /**
+     * Send a message and return the response.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  Request options
+     *
+     * @return  Response
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chat(string $message, array $options = []): Response
+    {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
+        $this->assertNotFlagged($message);
+
+        $payload = $this->buildChatRequestPayload($message, $options);
+
+        return $this->parseChatCompletion((string) $this->postJson($this->getChatEndpoint(), $payload)->getBody());
+    }
+
+    /**
+     * Stream a chat response. Yields text deltas; getReturn() gives the final Response.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat(), except tools
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $this->assertNoToolsWhenStreaming($options);
+        $this->assertNotFlagged($message);
+
+        $payload = $this->buildChatRequestPayload($message, ['stream' => true] + $options);
+        $payload['stream'] = true;
+
+        return yield from $this->streamChatCompletion($this->getChatEndpoint(), $payload, $this->buildHeaders());
+    }
+
+    /**
+     * List the models available to the API key. Models marked inactive are left out.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getAvailableModels(): array
+    {
+        $response = $this->makeGetRequest($this->baseUrl . '/models', $this->buildHeaders());
+        $body = (string) $response->getBody();
+        $data = $this->parseJsonResponse($body);
+
+        $this->assertResponseFields($data, ['data[]'], $body);
+
+        $active = array_filter($data['data'], fn ($model): bool => is_array($model) && ($model['active'] ?? true) !== false);
+
+        return array_column($active, 'id');
+    }
+
+    /**
+     * Get the known chat models from the capability map.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getChatModels(): array
+    {
+        return $this->getCapability('models', 'chat', []);
+    }
+
+    /**
+     * Check if a model is listed for a capability in the capability map.
+     *
+     * @param   string  $model       The model name
+     * @param   string  $capability  The capability
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isModelCapable(string $model, string $capability): bool
+    {
+        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
+    }
+
+    /**
+     * Get the message list for a chat payload: the "messages" option (validated) or the message,
+     * with the "system" option prepended.
+     *
+     * @param   string  $message  The user message
+     * @param   array   $options  Request options
+     *
+     * @return  array
+     * @throws  InvalidArgumentException  If the messages are invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildChatMessages(string $message, array $options): array
+    {
+        if (isset($options['messages'])) {
+            if (!is_array($options['messages']) || $options['messages'] === []) {
+                throw InvalidArgumentException::invalidMessages($this->getName(), 'Messages must be a non-empty array.');
+            }
+
+            $this->validateMessages($options['messages']);
+            $messages = $options['messages'];
+        } else {
+            $messages = [['role' => 'user', 'content' => $message]];
+        }
+
+        return $this->prependSystemMessage($messages, $options);
+    }
+
+    /**
+     * Add a question about an image as a new user turn after the "messages" option.
+     *
+     * @param   string  $message  The question
+     * @param   string  $image    The image URL or data URI
+     * @param   array   $options  Request options, with an optional "detail" (auto, low, high)
+     *
+     * @return  array  The options with the new messages
+     * @throws  InvalidArgumentException  If the detail option is invalid
+     * @since   __DEPLOY_VERSION__
+     */
+    private function addVisionMessage(string $message, string $image, array $options): array
+    {
+        $imageUrl = ['url' => $image];
+
+        if (isset($options['detail'])) {
+            if (!in_array($options['detail'], ['auto', 'low', 'high'], true)) {
+                throw InvalidArgumentException::invalidParameter('detail', $options['detail'], $this->getName(), 'Detail must be "auto", "low" or "high".');
+            }
+
+            $imageUrl['detail'] = $options['detail'];
+        }
+
+        $options['messages'] = array_merge((array) ($options['messages'] ?? []), [[
+            'role' => 'user',
+            'content' => [
+                ['type' => 'text', 'text' => $message],
+                ['type' => 'image_url', 'image_url' => $imageUrl],
+            ],
+        ]]);
+
+        return $options;
+    }
+
+    /**
+     * POST a JSON payload with the standard headers.
+     *
+     * @param   string  $endpoint  The endpoint URL
+     * @param   array   $payload   The payload
+     *
+     * @return  HttpResponse
+     * @throws  ProviderException  If the payload cannot be encoded
+     * @since   __DEPLOY_VERSION__
+     */
+    private function postJson(string $endpoint, array $payload): HttpResponse
+    {
+        $json = json_encode($payload);
+
+        if ($json === false) {
+            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
+        }
+
+        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
+    }
+
+    /**
+     * Build the HTTP headers with the API key as a Bearer token.
+     *
+     * @return  array
+     * @throws  AuthenticationException  If no API key is configured
+     * @since   __DEPLOY_VERSION__
+     */
+    private function buildHeaders(): array
+    {
+        $apiKey = $this->getOption('api_key');
+
+        if (empty($apiKey)) {
+            throw new AuthenticationException($this->getName(), ['message' => $this->getName() . ' API key not configured. Provide the api_key option.'], 401);
+        }
+
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ];
+    }
+
+    /**
+     * Get the chat completions endpoint.
+     *
+     * @return  string
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getChatEndpoint(): string
+    {
+        return $this->baseUrl . '/chat/completions';
     }
 }

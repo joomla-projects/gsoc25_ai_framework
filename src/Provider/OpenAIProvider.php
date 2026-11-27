@@ -10,7 +10,6 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
-use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
@@ -26,7 +25,6 @@ use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
-use Joomla\Http\Response as HttpResponse;
 
 /**
  * OpenAI provider implementation for chat completions.
@@ -186,17 +184,6 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
-    * Get the chat completions endpoint URL.
-    *
-    * @return  string  The endpoint URL
-    * @since  __DEPLOY_VERSION__
-    */
-    private function getChatEndpoint(): string
-    {
-        return $this->baseUrl . '/chat/completions';
-    }
-
-    /**
     * Get the image generation endpoint URL.
     *
     * @return  string  The endpoint URL
@@ -282,23 +269,6 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     private function getModerationEndpoint(): string
     {
         return $this->baseUrl . '/moderations';
-    }
-
-    /**
-     * Get all available models for this provider.
-     *
-     * @return  array  Array of available model names
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getAvailableModels(): array
-    {
-        $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest($this->baseUrl . '/models', $headers);
-        $data = $this->parseJsonResponse($response->getBody());
-
-        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
-
-        return array_column($data['data'], 'id');
     }
 
     /**
@@ -419,89 +389,27 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
-     * Check if a model supports a specific capability.
-     *
-     * @param   string  $model       The model name to check
-     * @param   string  $capability  The capability to check (chat, image, vision)
-     *
-     * @return  bool    True if model supports the capability, false otherwise
-     * @since   __DEPLOY_VERSION__
-     */
-    public function isModelCapable(string $model, string $capability): bool
-    {
-        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
-    }
-
-    /**
-     * Send a message to OpenAI and return response.
-     *
-     * @param   string  $message   The message to send
-     * @param   array   $options  Additional options for the request
-     *
-     * @return  Response  The AI response object
-     * @since  __DEPLOY_VERSION__
-     */
-    public function chat(string $message, array $options = []): Response
-    {
-        if (!empty($options['stream'])) {
-            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
-        }
-
-        $this->assertNotFlagged($message);
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-
-        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
-
-        return $this->parseChatCompletion($httpResponse->getBody());
-    }
-
-    /**
-     * Stream a chat completion. Yields text deltas; getReturn() gives the final Response.
-     *
-     * @param   string  $message  The message to send
-     * @param   array   $options  The same options as chat()
-     *
-     * @return  \Generator<int, string, mixed, Response>
-     * @since   __DEPLOY_VERSION__
-     */
-    public function chatStream(string $message, array $options = []): \Generator
-    {
-        $this->assertNoToolsWhenStreaming($options);
-
-        $this->assertNotFlagged($message);
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-        $payload['stream'] = true;
-        $payload['stream_options'] = ['include_usage' => true];
-
-        return yield from $this->streamChatCompletion($this->getChatEndpoint(), $payload, $this->buildHeaders());
-    }
-
-    /**
      * Generate chat completion with vision capability and return Response.
      *
      * @param   string  $message  The chat message about the image.
      * @param   string  $image    Image URL or base64 encoded image.
-     * @param   array   $options  Additional options for the request.
+     * @param   array   $options  The same options as chat(), plus "detail" (auto, low, high).
      *
      * @return  Response
      * @since  __DEPLOY_VERSION__
      */
     public function vision(string $message, string $image, array $options = []): Response
     {
-        // Apply moderation to the input (text + image)
-        $multiModalInput = [
+        $options['model'] ??= $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
+
+        $this->assertModelCapable($options['model'], 'vision', 'vision');
+        $this->assertNotFlagged([
             ['type' => 'text', 'text' => $message],
-            ['type' => 'image_url', 'image_url' => ['url' => $image]]
-        ];
-        $this->assertNotFlagged($multiModalInput);
+            ['type' => 'image_url', 'image_url' => ['url' => $image]],
+        ]);
 
-        $payload = $this->buildVisionRequestPayload($message, $image, 'vision', $options);
-
-        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
-
-        return $this->parseChatCompletion($httpResponse->getBody());
+        // The question is moderated above together with the image
+        return $this->chat('', $this->addVisionMessage($message, $image, $options));
     }
 
     /**
@@ -723,26 +631,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
 
-        if (isset($options['messages'])) {
-            $messages = $options['messages'];
-            if (!is_array($messages) || empty($messages)) {
-                throw InvalidArgumentException::invalidMessages('openai', 'Messages must be a non-empty array.');
-            }
-            $this->validateMessages($messages);
-        } else {
-            $messages = [
-                [
-                    'role' => 'user',
-                    'content' => $message
-                ]
-            ];
-        }
-
-        $messages = $this->prependSystemMessage($messages, $options);
-
         $payload = [
             'model' => $model,
-            'messages' => $messages
+            'messages' => $this->buildChatMessages($message, $options),
         ];
 
         // Handle modalities parameter
@@ -808,8 +699,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $payload['n'] = $n;
         }
 
-        if (isset($options['stream'])) {
-            $payload['stream'] = (bool) $options['stream'];
+        if (!empty($options['stream'])) {
+            $payload['stream_options'] = ['include_usage' => true];
         }
 
         if (isset($options['max_tokens'])) {
@@ -818,66 +709,6 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         if (isset($options['temperature'])) {
             $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        return $this->addToolAndSchemaParameters($payload, $options);
-    }
-
-    /**
-     * Build payload for vision request.
-     *
-     * @param   string  $message  The chat message about the image
-     * @param   string  $image    Image URL or base64 encoded image
-     * @param   array   $options  Additional options
-     *
-     * @return  array   The request payload
-     * @throws  \InvalidArgumentException  If model does not support vision capability
-     * @since  __DEPLOY_VERSION__
-     */
-    private function buildVisionRequestPayload(string $message, string $image, string $capability, array $options = []): array
-    {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
-
-        $this->assertModelCapable($model, $capability, $capability);
-
-        $content = [
-            [
-                'type' => 'text',
-                'text' => $message
-            ],
-            [
-                'type' => 'image_url',
-                'image_url' => [
-                    'url' => $image
-                ]
-            ]
-        ];
-
-        $payload = [
-            'model' => $model,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => $content
-                ]
-            ]
-        ];
-
-        // Same optional parameters as chat()
-        if (isset($options['max_tokens'])) {
-            $payload['max_tokens'] = (int) $options['max_tokens'];
-        }
-
-        if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['n'])) {
-            $n = (int) $options['n'];
-            if ($n < 1 || $n > 128) {
-                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 128.', ['min_value' => 1, 'max_value' => 128]);
-            }
-            $payload['n'] = $n;
         }
 
         return $this->addToolAndSchemaParameters($payload, $options);
@@ -1438,47 +1269,6 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         return $payload;
-    }
-
-    /**
-     * POST a JSON payload to an OpenAI endpoint with the standard headers.
-     *
-     * @param   string  $endpoint  The endpoint URL
-     * @param   array   $payload   The request payload
-     *
-     * @return  \Joomla\Http\Response
-     * @throws  ProviderException  If the payload cannot be encoded
-     * @since   __DEPLOY_VERSION__
-     */
-    private function postJson(string $endpoint, array $payload): HttpResponse
-    {
-        $json = json_encode($payload);
-
-        if ($json === false) {
-            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
-        }
-
-        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
-    }
-
-    /**
-     * Throw if automatic moderation flags the input (see the "moderate_input" option).
-     *
-     * @param   string|array  $input  Text or multimodal input
-     *
-     * @throws  AIException  If the content is flagged
-     * @since   __DEPLOY_VERSION__
-     */
-    private function assertNotFlagged(string|array $input): void
-    {
-        // Nothing new to check, e.g. a conversation turn that only sends tool results
-        if ($input === '' || $input === []) {
-            return;
-        }
-
-        if ($this->moderateInput($input, [])) {
-            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
-        }
     }
 
     /**

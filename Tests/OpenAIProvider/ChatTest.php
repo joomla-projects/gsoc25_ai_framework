@@ -3,17 +3,21 @@
 namespace Joomla\AI\Tests\OpenAIProvider;
 
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
 use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\Http\Http;
 use Joomla\Http\HttpFactory;
 use Joomla\AI\Provider\OpenAIProvider;
+use Joomla\AI\Tests\Stub\RoutingHttpTrait;
 use Joomla\Http\Response as HttpResponse;
 use PHPUnit\Framework\TestCase;
 
 class ChatTest extends TestCase
 {
+    use RoutingHttpTrait;
+
     public function testSimpleChatCompletion()
     {
         // Test 1: Test chat method for successful completion
@@ -261,6 +265,34 @@ class ChatTest extends TestCase
         $decoded = base64_decode($response->getContent(), true);
         $this->assertNotFalse($decoded);
         $this->assertSame($rawAudio, $decoded);
+    }
+
+    public function testVisionModeratesImageAndUsesChatOptions(): void
+    {
+        $provider = new OpenAIProvider(['api_key' => 'k', 'max_retries' => 0], $this->routingHttpFactory([
+            'POST https://api.openai.com/v1/moderations' => ['results' => [['flagged' => false]]],
+            'POST https://api.openai.com/v1/chat/completions' => [
+                'model' => 'gpt-4o-mini',
+                'choices' => [['index' => 0, 'message' => ['role' => 'assistant', 'content' => 'A cat'], 'finish_reason' => 'stop']],
+            ],
+        ]));
+
+        $response = $provider->vision('What is this?', 'https://example.com/cat.png', ['system' => 'Be brief.', 'detail' => 'low']);
+
+        $this->assertSame('A cat', $response->getContent());
+        $this->assertCount(2, $this->requests);
+        $this->assertSame([
+            ['type' => 'text', 'text' => 'What is this?'],
+            ['type' => 'image_url', 'image_url' => ['url' => 'https://example.com/cat.png']],
+        ], $this->sentJson(0)['input']);
+
+        $sent = $this->sentJson(1);
+        $this->assertSame('gpt-4o-mini', $sent['model']);
+        $this->assertSame(['role' => 'system', 'content' => 'Be brief.'], $sent['messages'][0]);
+        $this->assertSame(['url' => 'https://example.com/cat.png', 'detail' => 'low'], $sent['messages'][1]['content'][1]['image_url']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $provider->vision('What is this?', 'https://example.com/cat.png', ['model' => 'gpt-3.5-turbo']);
     }
 
     private function createJsonResponse(array $payload, int $status = 200): HttpResponse

@@ -10,7 +10,6 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
-use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ChatInterface;
@@ -20,7 +19,6 @@ use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
-use Joomla\Http\Response as HttpResponse;
 
 /**
  * Groq provider implementation.
@@ -140,36 +138,6 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
     }
 
     /**
-     * List the models available to the API key.
-     *
-     * @return  array
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getAvailableModels(): array
-    {
-        $response = $this->makeGetRequest($this->baseUrl . '/models', $this->buildHeaders());
-        $data = $this->parseJsonResponse((string) $response->getBody());
-
-        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
-
-        // Groq marks models that can no longer be used as inactive
-        $active = array_filter($data['data'], fn ($model): bool => is_array($model) && ($model['active'] ?? true) !== false);
-
-        return array_column($active, 'id');
-    }
-
-    /**
-     * Get the known chat models.
-     *
-     * @return  array
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getChatModels(): array
-    {
-        return $this->getCapability('models', 'chat', []);
-    }
-
-    /**
      * Get the known speech-to-text models.
      *
      * @return  array
@@ -181,66 +149,6 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
     }
 
     /**
-     * Check if a model supports a capability (chat, json_schema, vision, transcription, translation).
-     *
-     * @param   string  $model       The model name
-     * @param   string  $capability  The capability
-     *
-     * @return  bool
-     * @since   __DEPLOY_VERSION__
-     */
-    public function isModelCapable(string $model, string $capability): bool
-    {
-        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
-    }
-
-    /**
-     * Send a message to Groq and return the response.
-     *
-     * Options: model, messages, system, max_tokens, temperature, top_p, stop, seed,
-     * reasoning_effort, tools, tool_choice, parallel_tool_calls, response_schema, stream, on_chunk.
-     *
-     * @param   string  $message  The message to send
-     * @param   array   $options  Additional options
-     *
-     * @return  Response
-     * @since   __DEPLOY_VERSION__
-     */
-    public function chat(string $message, array $options = []): Response
-    {
-        if (!empty($options['stream'])) {
-            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
-        }
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-
-        return $this->parseChatCompletion((string) $this->postJson($this->getChatEndpoint(), $payload)->getBody());
-    }
-
-    /**
-     * Stream a chat response. Yields text deltas; getReturn() gives the final Response.
-     *
-     * @param   string  $message  The message to send
-     * @param   array   $options  The same options as chat(); response_schema is not supported when streaming
-     *
-     * @return  \Generator<int, string, mixed, Response>
-     * @since   __DEPLOY_VERSION__
-     */
-    public function chatStream(string $message, array $options = []): \Generator
-    {
-        $this->assertNoToolsWhenStreaming($options);
-
-        if (isset($options['response_schema'])) {
-            throw InvalidArgumentException::invalidParameter('response_schema', 'stream', 'groq', 'Groq does not support JSON schema output with streaming.');
-        }
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-        $payload['stream'] = true;
-
-        return yield from $this->streamChatCompletion($this->getChatEndpoint(), $payload, $this->buildHeaders());
-    }
-
-    /**
      * Ask a question about an image.
      *
      * Groq has no vision model in production, so a vision-capable model must be named, either with
@@ -248,7 +156,7 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
      *
      * @param   string  $message  The question
      * @param   string  $image    An http(s) image URL or a base64 data URI
-     * @param   array   $options  The same options as chat()
+     * @param   array   $options  The same options as chat(), plus "detail" (auto, low, high)
      *
      * @return  Response
      * @throws  InvalidArgumentException  If no model is given or the image is not a URL or data URI
@@ -266,15 +174,7 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
             throw InvalidArgumentException::invalidParameter('image', substr($image, 0, 100), 'groq', 'Image must be an http(s) URL or a base64 data URI.');
         }
 
-        $options['messages'] = [[
-            'role' => 'user',
-            'content' => [
-                ['type' => 'text', 'text' => $message],
-                ['type' => 'image_url', 'image_url' => ['url' => $image]],
-            ],
-        ]];
-
-        return $this->chat($message, $options);
+        return $this->chat($message, $this->addVisionMessage($message, $image, $options));
     }
 
     /**
@@ -312,6 +212,9 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
     /**
      * Build the chat completions payload.
      *
+     * Options: model, messages, system, max_tokens, temperature, top_p, stop, seed,
+     * reasoning_effort, tools, tool_choice, parallel_tool_calls, response_schema.
+     *
      * @param   string  $message  The user message
      * @param   array   $options  Request options
      *
@@ -321,17 +224,6 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
      */
     private function buildChatRequestPayload(string $message, array $options): array
     {
-        if (isset($options['messages'])) {
-            if (!is_array($options['messages']) || $options['messages'] === []) {
-                throw InvalidArgumentException::invalidMessages('groq', 'Messages must be a non-empty array.');
-            }
-
-            $this->validateMessages($options['messages']);
-            $messages = $options['messages'];
-        } else {
-            $messages = [['role' => 'user', 'content' => $message]];
-        }
-
         if (isset($options['n']) && (int) $options['n'] !== 1) {
             throw InvalidArgumentException::invalidParameter('n', $options['n'], 'groq', 'Groq only supports n = 1.');
         }
@@ -340,9 +232,13 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
             throw InvalidArgumentException::invalidParameter('response_schema', 'tools', 'groq', 'Groq does not support JSON schema output together with tools.');
         }
 
+        if (isset($options['response_schema']) && !empty($options['stream'])) {
+            throw InvalidArgumentException::invalidParameter('response_schema', 'stream', 'groq', 'Groq does not support JSON schema output with streaming.');
+        }
+
         $payload = [
             'model' => $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL),
-            'messages' => $this->prependSystemMessage($messages, $options),
+            'messages' => $this->buildChatMessages($message, $options),
         ];
 
         // max_tokens is deprecated on Groq in favour of max_completion_tokens
@@ -450,52 +346,5 @@ class GroqProvider extends AbstractProvider implements ProviderInterface, ChatIn
         $metadata += $this->normaliseOpenAIUsage($usage);
 
         return $this->recordResponse(new Response((string) $data['text'], $this->getName(), $metadata, 200));
-    }
-
-    /**
-     * POST a JSON payload with the standard headers.
-     *
-     * @param   string  $endpoint  The endpoint URL
-     * @param   array   $payload   The payload
-     *
-     * @return  HttpResponse
-     * @throws  ProviderException  If the payload cannot be encoded
-     * @since   __DEPLOY_VERSION__
-     */
-    private function postJson(string $endpoint, array $payload): HttpResponse
-    {
-        $json = json_encode($payload);
-
-        if ($json === false) {
-            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
-        }
-
-        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
-    }
-
-    /**
-     * Build the HTTP headers.
-     *
-     * @return  array
-     * @throws  AuthenticationException  If no API key is configured
-     * @since   __DEPLOY_VERSION__
-     */
-    private function buildHeaders(): array
-    {
-        $apiKey = $this->getOption('api_key');
-
-        if (empty($apiKey)) {
-            throw new AuthenticationException($this->getName(), ['message' => 'Groq API key not configured. Provide the api_key option.'], 401);
-        }
-
-        return [
-            'Authorization' => 'Bearer ' . $apiKey,
-            'Content-Type' => 'application/json',
-        ];
-    }
-
-    private function getChatEndpoint(): string
-    {
-        return $this->baseUrl . '/chat/completions';
     }
 }
