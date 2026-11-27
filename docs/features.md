@@ -52,7 +52,7 @@ Pending tool calls are not saved, so finish them before storing.
 
 ## Streaming
 
-OpenAI, Anthropic and Ollama can stream replies as they are generated. `chatStream()` yields text deltas and returns the final `Response`:
+OpenAI, Anthropic, Ollama and Gemini can stream replies as they are generated. `chatStream()` yields text deltas and returns the final `Response`:
 
 ```php
 $stream = $ai->chatStream('Write a haiku about Joomla');
@@ -114,12 +114,12 @@ echo $response->getContent();
 In a [conversation](#conversations), `submitToolResults()` does the message handling for you.
 
 - `tool_choice` accepts `'auto'`, `'none'`, `'required'` or `['name' => 'get_weather']`. Ollama ignores it.
-- `'parallel_tool_calls' => false` limits the model to one call per turn.
+- `'parallel_tool_calls' => false` limits the model to one call per turn (not supported by Gemini or Ollama).
 - Some Claude models, such as `claude-opus-5-5`, reject `'required'` and a named tool. Use `'auto'` and ask for the tool in the prompt.
 
 ## JSON schema output
 
-`response_schema` constrains the reply to a JSON schema (sent as OpenAI `response_format`, Anthropic `output_config.format` or Ollama `format`). `getJson()` decodes the reply:
+`response_schema` constrains the reply to a JSON schema (sent as OpenAI `response_format`, Anthropic `output_config.format`, Ollama `format` or Gemini `response_format`). `getJson()` decodes the reply:
 
 ```php
 $response = $ai->chat('Extract the person: Ada Lovelace, 36', [
