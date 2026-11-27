@@ -14,7 +14,11 @@ use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ChatInterface;
+use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ProviderInterface;
+use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
 
@@ -23,15 +27,23 @@ use Joomla\Http\HttpFactory;
  *
  * @since  __DEPLOY_VERSION__
  */
-class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface
+class AnthropicProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, StreamInterface, ToolInterface
 {
+    /**
+     * Default model used when none is configured
+     *
+     * @var    string
+     * @since  __DEPLOY_VERSION__
+     */
+    private const DEFAULT_MODEL = 'claude-opus-5-5';
+
     /**
      * Custom base URL for API requests
      *
      * @var    string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
+    private string $baseUrl;
 
     /**
      * Constructor.
@@ -41,7 +53,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -56,13 +68,14 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     /**
      * Check if Anthropic provider is supported/configured.
      *
-     * @return  boolean  True if API key is available
+     * The API key comes from the api_key option and is checked when a request is made.
+     *
+     * @return  boolean  Always true
      * @since  __DEPLOY_VERSION__
      */
     public static function isSupported(): bool
     {
-        return !empty($_ENV['ANTHROPIC_API_KEY']) ||
-               !empty(getenv('ANTHROPIC_API_KEY'));
+        return true;
     }
 
     /**
@@ -102,14 +115,12 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function getApiKey(): string
     {
-        $apiKey = $this->getOption('api_key') ??
-                  $_ENV['ANTHROPIC_API_KEY'] ??
-                  getenv('ANTHROPIC_API_KEY');
+        $apiKey = $this->getOption('api_key');
 
         if (empty($apiKey)) {
             throw new AuthenticationException(
                 $this->getName(),
-                ['message' => 'Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable or provide api_key option.'],
+                ['message' => 'Anthropic API key not configured. Provide the api_key option.'],
                 401
             );
         }
@@ -148,10 +159,39 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     public function getAvailableModels(): array
     {
         $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest($this->getModelsEndpoint(), $headers);
+        // The Models API pages at 20 by default
+        $response = $this->makeGetRequest($this->getModelsEndpoint() . '?limit=1000', $headers);
         $data = $this->parseJsonResponse($response->getBody());
+        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
 
         return array_column($data['data'], 'id');
+    }
+
+    /**
+     * Check if a model supports a capability.
+     *
+     * Uses the "models" entry of the capabilities option when set for that capability;
+     * otherwise every model returned by the Models API supports chat and vision.
+     *
+     * @param   string  $model       The model ID
+     * @param   string  $capability  The capability (chat, vision)
+     *
+     * @return  bool
+     * @since   __DEPLOY_VERSION__
+     */
+    public function isModelCapable(string $model, string $capability): bool
+    {
+        $listed = $this->getCapability('models', $capability);
+
+        if ($listed !== null) {
+            return in_array($model, (array) $listed, true);
+        }
+
+        if (!in_array($capability, ['chat', 'vision'], true)) {
+            return false;
+        }
+
+        return in_array($model, $this->getAvailableModels(), true);
     }
 
     /**
@@ -192,7 +232,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildChatRequestPayload(string $message, array $options = []): array
     {
-        $model = $options['model'] ?? $this->getOption('model', 'claude-3-haiku-20240307');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL);
         $maxTokens = $options['max_tokens'] ?? 1024;
 
         $messages = $options['messages'] ?? [
@@ -208,7 +248,156 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'max_tokens' => $maxTokens
         ];
 
+        return $this->addOptionalParameters($payload, $options);
+    }
+
+    /**
+     * Add optional sampling and prompt parameters to a request payload.
+     *
+     * @param   array  $payload  The request payload
+     * @param   array  $options  Additional options
+     *
+     * @return  array  The request payload with optional parameters applied
+     * @since  __DEPLOY_VERSION__
+     */
+    private function addOptionalParameters(array $payload, array $options): array
+    {
+        if (isset($options['temperature'])) {
+            $payload['temperature'] = (float) $options['temperature'];
+        }
+
+        if (isset($options['top_k'])) {
+            $payload['top_k'] = (int) $options['top_k'];
+        }
+
+        if (isset($options['top_p'])) {
+            $payload['top_p'] = (float) $options['top_p'];
+        }
+
+        if (isset($options['stop_sequences'])) {
+            $payload['stop_sequences'] = $options['stop_sequences'];
+        }
+
+        if (isset($options['system'])) {
+            $payload['system'] = $options['system'];
+        }
+
+        $tools = $this->getToolDefinitions($options);
+
+        if ($tools !== []) {
+            $payload['tools'] = array_map(function (array $tool): array {
+                $definition = [
+                    'name' => $tool['name'],
+                    'description' => $tool['description'],
+                    'input_schema' => $tool['parameters'],
+                ];
+
+                if ($tool['strict'] !== null) {
+                    $definition['strict'] = $tool['strict'];
+                }
+
+                return $definition;
+            }, $tools);
+
+            $toolChoice = $this->mapToolChoice($options['tool_choice'] ?? null);
+
+            if (isset($options['parallel_tool_calls']) && !$options['parallel_tool_calls']) {
+                $toolChoice ??= ['type' => 'auto'];
+                $toolChoice['disable_parallel_tool_use'] = true;
+            }
+
+            if ($toolChoice !== null) {
+                $payload['tool_choice'] = $toolChoice;
+            }
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['output_config']['format'] = [
+                'type' => 'json_schema',
+                'schema' => $schema['schema'],
+            ];
+        }
+
         return $payload;
+    }
+
+    /**
+     * Map the provider-neutral tool_choice option to Anthropic's format.
+     *
+     * Note: some models (e.g. claude-opus-5-5) reject "required" and a named tool; use "auto"
+     * and ask for the tool in the prompt there.
+     *
+     * @param   mixed  $choice  "auto", "none", "required", or ['name' => tool name]
+     *
+     * @return  array|null
+     * @since   __DEPLOY_VERSION__
+     */
+    private function mapToolChoice(mixed $choice): ?array
+    {
+        return match (true) {
+            $choice === null => null,
+            $choice === 'auto' => ['type' => 'auto'],
+            $choice === 'none' => ['type' => 'none'],
+            $choice === 'required' => ['type' => 'any'],
+            is_array($choice) && isset($choice['name']) => ['type' => 'tool', 'name' => $choice['name']],
+            is_array($choice) => $choice,
+            default => throw InvalidArgumentException::invalidParameter('tool_choice', $choice, 'anthropic', 'tool_choice must be "auto", "none", "required" or [\'name\' => tool].'),
+        };
+    }
+
+    /**
+     * Build the messages to append after running the tools requested in a response.
+     *
+     * @param   Response  $response  The response with tool calls
+     * @param   array     $results   Tool use id => result
+     *
+     * @return  array  The assistant message (all content blocks, including thinking) and a user message with tool_result blocks
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildToolResultMessages(Response $response, array $results): array
+    {
+        $toolResults = [];
+
+        foreach ($response->getToolCalls() as $call) {
+            if (!array_key_exists($call['id'], $results)) {
+                throw InvalidArgumentException::missingParameter("result for tool call '{$call['id']}'", 'anthropic');
+            }
+
+            $toolResults[] = [
+                'type' => 'tool_result',
+                'tool_use_id' => $call['id'],
+                'content' => $this->encodeToolResult($results[$call['id']]),
+            ];
+        }
+
+        return [
+            $this->buildAssistantMessage($response),
+            ['role' => 'user', 'content' => $toolResults],
+        ];
+    }
+
+    /**
+     * Build the assistant message for a conversation history.
+     *
+     * Uses all content blocks unchanged (thinking and tool_use included): newer models expect earlier
+     * assistant turns to be sent back exactly as they were returned.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        $blocks = $response->getMetadata()['content_blocks'] ?? null;
+
+        if (is_array($blocks) && $blocks !== []) {
+            return ['role' => 'assistant', 'content' => $blocks];
+        }
+
+        return parent::buildAssistantMessage($response);
     }
 
     /**
@@ -224,7 +413,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildVisionRequestPayload(string $message, string $image, array $options = []): array
     {
-        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'claude-3-haiku-20240307');
+        $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL);
         $maxTokens = $options['max_tokens'] ?? 1024;
 
         // Determine image format and validate
@@ -251,28 +440,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             'max_tokens' => $maxTokens
         ];
 
-        // Add optional parameters
-        if (isset($options['temperature'])) {
-            $payload['temperature'] = (float) $options['temperature'];
-        }
-
-        if (isset($options['top_k'])) {
-            $payload['top_k'] = (int) $options['top_k'];
-        }
-
-        if (isset($options['top_p'])) {
-            $payload['top_p'] = (float) $options['top_p'];
-        }
-
-        if (isset($options['stop_sequences'])) {
-            $payload['stop_sequences'] = $options['stop_sequences'];
-        }
-
-        if (isset($options['system'])) {
-            $payload['system'] = $options['system'];
-        }
-
-        return $payload;
+        return $this->addOptionalParameters($payload, $options);
     }
 
     /**
@@ -286,6 +454,10 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     public function chat(string $message, array $options = []): Response
     {
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
+        }
+
         $payload = $this->buildChatRequestPayload($message, $options);
 
         $headers = $this->buildHeaders();
@@ -297,6 +469,76 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
         );
 
         return $this->parseAnthropicResponse($httpResponse->getBody());
+    }
+
+    /**
+     * Stream a chat message. Yields text deltas; getReturn() gives the final Response.
+     * Thinking deltas are not yielded.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $this->assertNoToolsWhenStreaming($options);
+
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+
+        $chunks = $this->makeStreamingPostRequest($this->getMessagesEndpoint(), json_encode($payload), $this->buildHeaders());
+
+        $content = '';
+        $message = ['id' => null, 'model' => $payload['model'], 'role' => 'assistant', 'type' => 'message'];
+        $usage = [];
+        $stopReason = null;
+        $stopSequence = null;
+
+        foreach ($this->readServerSentEvents($chunks) as $event) {
+            $data = $this->decodeStreamEvent($event['data']);
+            $type = $data['type'] ?? $event['event'];
+
+            switch ($type) {
+                case 'error':
+                    throw new ProviderException($this->getName(), $data);
+
+                case 'message_start':
+                    if (is_array($data['message'] ?? null)) {
+                        $message = array_intersect_key($data['message'], $message) + $message;
+                        $usage = is_array($data['message']['usage'] ?? null) ? $data['message']['usage'] : $usage;
+                    }
+                    break;
+
+                case 'content_block_delta':
+                    if (($data['delta']['type'] ?? null) === 'text_delta' && is_string($data['delta']['text'] ?? null)) {
+                        $content .= $data['delta']['text'];
+
+                        yield $data['delta']['text'];
+                    }
+                    break;
+
+                case 'message_delta':
+                    $stopReason = $data['delta']['stop_reason'] ?? $stopReason;
+                    $stopSequence = $data['delta']['stop_sequence'] ?? $stopSequence;
+
+                    if (is_array($data['usage'] ?? null)) {
+                        $usage = array_replace($usage, $data['usage']);
+                    }
+                    break;
+            }
+        }
+
+        $metadata = $message + [
+            'usage' => $usage,
+            'finish_reason' => $this->normaliseFinishReason($stopReason),
+            'stop_reason' => $stopReason,
+            'stop_sequence' => $stopSequence,
+            'stream' => true,
+        ] + $this->normaliseUsage($usage['input_tokens'] ?? null, $usage['output_tokens'] ?? null);
+
+        return $this->recordResponse(new Response($content, $this->getName(), $metadata, $this->determineAIStatusCode(['stop_reason' => $stopReason])));
     }
 
     /**
@@ -340,32 +582,75 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             throw new ProviderException($this->getName(), $data);
         }
 
-        // Get the text content from the first content block
+        $this->assertResponseFields($data, ['content[]'], $responseBody);
+
+        // Join the text blocks; thinking and tool_use blocks may come before them
         $content = '';
-        if (!empty($data['content'][0]['text'])) {
-            $content = $data['content'][0]['text'];
+        $toolCalls = [];
+        foreach ($data['content'] as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+
+            if (($block['type'] ?? null) === 'text') {
+                $content .= (string) ($block['text'] ?? '');
+            } elseif (($block['type'] ?? null) === 'tool_use') {
+                if (!is_string($block['name'] ?? null) || !is_array($block['input'] ?? null)) {
+                    throw new UnserializableResponseException($this->getName(), $responseBody, 'tool_use block is missing name or input');
+                }
+
+                $toolCalls[] = [
+                    'id' => (string) ($block['id'] ?? ''),
+                    'name' => $block['name'],
+                    'arguments' => $block['input'],
+                ];
+            }
         }
 
         $statusCode = $this->determineAIStatusCode($data);
 
         $metadata = [
             'id' => $data['id'] ?? null,
-            'model' => $data['model'],
-            'role' => $data['role'],
-            'type' => $data['type'],
-            'usage' => $data['usage'] ?? [],
-            'input_tokens' => $data['usage']['input_tokens'] ?? 0,
-            'output_tokens' => $data['usage']['output_tokens'] ?? 0,
-            'stop_reason' => $data['stop_reason'],
-            'stop_sequence' => $data['stop_sequence']
-        ];
+            'model' => $data['model'] ?? null,
+            'role' => $data['role'] ?? null,
+            'type' => $data['type'] ?? null,
+            'usage' => is_array($data['usage'] ?? null) ? $data['usage'] : [],
+            'finish_reason' => $this->normaliseFinishReason($data['stop_reason'] ?? null),
+            'stop_reason' => $data['stop_reason'] ?? null,
+            'stop_sequence' => $data['stop_sequence'] ?? null,
+            'tool_calls' => $toolCalls,
+            // Kept so tool results can be sent back with the full assistant turn
+            'content_blocks' => $data['content']
+        ] + $this->normaliseUsage(
+            $data['usage']['input_tokens'] ?? null,
+            $data['usage']['output_tokens'] ?? null
+        );
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
-        );
+        ));
+    }
+
+    /**
+     * Map Anthropic's stop_reason to the normalised finish reason.
+     *
+     * @param   string|null  $stopReason  Anthropic stop_reason
+     *
+     * @return  string|null
+     * @since  __DEPLOY_VERSION__
+     */
+    private function normaliseFinishReason(?string $stopReason): ?string
+    {
+        return match ($stopReason) {
+            'end_turn', 'stop_sequence' => 'stop',
+            'max_tokens', 'model_context_window_exceeded' => 'length',
+            'tool_use' => 'tool_calls',
+            'refusal' => 'content_filter',
+            default => $stopReason,
+        };
     }
 
     /**
@@ -395,7 +680,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
     /**
      * Build image content block for Anthropic API.
      *
-     * @param   string  $image  Image URL or base64 encoded image
+     * @param   string  $image  Image URL or base64 data URI (data:image/...;base64,...)
      *
      * @return  array   Image content block
      * @throws  \InvalidArgumentException  If image format is invalid
@@ -403,17 +688,13 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
      */
     private function buildImageContent(string $image): array
     {
-        // Check if it's a URL
-        if (filter_var($image, FILTER_VALIDATE_URL)) {
-            $imageData = $this->fetchImageFromUrl($image);
-            $mimeType = $this->detectImageMimeType($imageData);
-
+        // URLs are passed through; Anthropic fetches the image itself
+        if (filter_var($image, FILTER_VALIDATE_URL) && preg_match('#^https?://#i', $image)) {
             return [
                 'type' => 'image',
                 'source' => [
-                    'type' => 'base64',
-                    'media_type' => $mimeType,
-                    'data' => base64_encode($imageData)
+                    'type' => 'url',
+                    'url' => $image
                 ]
             ];
         }
@@ -435,42 +716,7 @@ class AnthropicProvider extends AbstractProvider implements ProviderInterface, C
             ];
         }
 
-        // If it is a file path
-        if (file_exists($image)) {
-            $imageData = file_get_contents($image);
-            $mimeType = $this->detectImageMimeType($imageData);
-
-            return [
-                'type' => 'image',
-                'source' => [
-                    'type' => 'base64',
-                    'media_type' => $mimeType,
-                    'data' => base64_encode($imageData)
-                ]
-            ];
-        }
-
-        throw InvalidArgumentException::invalidParameter('image', $image, 'anthropic', 'Image must be a valid URL, file path, or base64 encoded data.');
-    }
-
-    /**
-     * Fetch image data from URL.
-     *
-     * @param   string  $url  Image URL
-     *
-     * @return  string  Image binary data
-     * @throws  \Exception  If image cannot be fetched
-     * @since  __DEPLOY_VERSION__
-     */
-    private function fetchImageFromUrl(string $url): string
-    {
-        $httpResponse = $this->makeGetRequest($url);
-
-        if ($httpResponse->getStatusCode() !== 200) {
-            throw new \Exception("Failed to fetch image from URL: {$url}");
-        }
-
-        return $httpResponse->getBody();
+        throw InvalidArgumentException::invalidParameter('image', $image, 'anthropic', 'Image must be an http(s) URL or a base64 data URI.');
     }
 
     /**

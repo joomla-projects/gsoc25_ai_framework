@@ -10,9 +10,11 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
+use Joomla\AI\Exception\AIException;
 use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
+use Joomla\AI\Exception\UnserializableResponseException;
 use Joomla\AI\Interface\ProviderInterface;
 use Joomla\AI\Interface\AudioInterface;
 use Joomla\AI\Interface\ChatInterface;
@@ -20,15 +22,18 @@ use Joomla\AI\Interface\EmbeddingInterface;
 use Joomla\AI\Interface\ImageInterface;
 use Joomla\AI\Interface\ModelInterface;
 use Joomla\AI\Interface\ModerationInterface;
+use Joomla\AI\Interface\StreamInterface;
+use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
+use Joomla\Http\Response as HttpResponse;
 
 /**
  * OpenAI provider implementation for chat completions.
  *
  * @since  __DEPLOY_VERSION__
  */
-class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface
+class OpenAIProvider extends AbstractProvider implements ProviderInterface, ChatInterface, ModelInterface, ImageInterface, EmbeddingInterface, AudioInterface, ModerationInterface, StreamInterface, ToolInterface
 {
     /**
      * Custom base URL for API requests
@@ -36,87 +41,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @var string
      * @since  __DEPLOY_VERSION__
      */
-    private $baseUrl;
-
-    /**
-     * Models that support chat capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const CHAT_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
-
-    /**
-     * Models that support vision capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const VISION_MODELS = ['gpt-4o', 'gpt-4o-mini'];
-
-    /**
-     * Models that support image generation capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const IMAGE_MODELS = ['dall-e-2', 'dall-e-3', 'gpt-image-1'];
-
-    /**
-     * Models that support text-to-speech (TTS) capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TTS_MODELS = ['gpt-4o-mini-tts',  'tts-1', 'tts-1-hd'];
-
-    /**
-     * Models that support text embeddings creating capability.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const EMBEDDING_MODELS = ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'];
-
-    /**
-     * Models that support audio transcription.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TRANSCRIPTION_MODELS = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'];
-
-    /**
-     * Models that support content moderation.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const MODERATION_MODELS = ['omni-moderation-latest', 'text-moderation-007'];
-
-    /**
-     * Available voices for text-to-speech.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
-
-    /**
-     * Supported audio formats for OpenAI TTS.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const AUDIO_FORMATS = ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'];
-
-    /**
-     * Supported input formats for transcription.
-     *
-     * @var array
-     * @since  __DEPLOY_VERSION__
-     */
-    private const TRANSCRIPTION_INPUT_FORMATS = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
+    private string $baseUrl;
 
     /**
      * Constructor.
@@ -126,7 +51,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      *
      * @since  __DEPLOY_VERSION__
      */
-    public function __construct($options = [], ?HttpFactory $httpFactory = null)
+    public function __construct(array|\ArrayAccess $options = [], ?HttpFactory $httpFactory = null)
     {
         parent::__construct($options, $httpFactory);
 
@@ -139,15 +64,112 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     }
 
     /**
+     * Get the default capability map for OpenAI.
+     * Override via the "capabilities" provider option or in a subclass.
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getDefaultCapabilities(): array
+    {
+        return [
+            // Models per capability
+            'models' => [
+                'chat'            => ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+                'vision'          => ['gpt-4o', 'gpt-4o-mini'],
+                'image'           => ['dall-e-2', 'dall-e-3', 'gpt-image-1'],
+                'image-edit'      => ['dall-e-2', 'gpt-image-1'],
+                'image-variation' => ['dall-e-2'],
+                'text-to-speech'  => ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
+                'transcription'   => ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'],
+                'translation'     => ['whisper-1'],
+                'embedding'       => ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'],
+                'moderation'      => ['omni-moderation-latest', 'text-moderation-007'],
+            ],
+
+            // Allowed values
+            'voices'                      => ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'],
+            'audio_formats'               => ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'],
+            'transcription_input_formats' => ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'],
+
+            // Per-model image limits (models without an entry are not validated client-side)
+            'image_sizes' => [
+                'gpt-image-1' => ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+                'dall-e-2'    => ['256x256', '512x512', '1024x1024'],
+                'dall-e-3'    => ['1024x1024', '1792x1024', '1024x1792'],
+            ],
+            'image_qualities' => [
+                'gpt-image-1' => ['auto', 'high', 'medium', 'low'],
+                'dall-e-2'    => ['standard'],
+                'dall-e-3'    => ['auto', 'hd', 'standard'],
+            ],
+            'image_prompt_max_length' => [
+                'gpt-image-1' => 32000,
+                'dall-e-2'    => 1000,
+                'dall-e-3'    => 4000,
+            ],
+            'image_file_max_mb' => [
+                'gpt-image-1' => 50,
+                'dall-e-2'    => 4,
+            ],
+
+            // Embedding models that accept "dimensions", with their maximum
+            'embedding_max_dimensions' => [
+                'text-embedding-3-large' => 3072,
+                'text-embedding-3-small' => 1536,
+            ],
+
+            // Global limits
+            'image_edit_max_images'  => 16,
+            'mask_file_max_mb'       => 4,
+            'speech_max_length'      => 4096,
+            'audio_file_max_mb'      => 25,
+        ];
+    }
+
+    /**
+     * Get the models listed for a capability.
+     *
+     * @param   string  $capability  The capability (chat, vision, image, ...)
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getCapabilityModels(string $capability): array
+    {
+        return $this->getCapability('models', $capability, []);
+    }
+
+    /**
+     * Throw if the model is not listed for the capability.
+     *
+     * @param   string  $model       The model name
+     * @param   string  $capability  The capability key in the "models" map
+     * @param   string  $label       Human readable capability name for the error
+     *
+     * @throws  InvalidArgumentException
+     * @since   __DEPLOY_VERSION__
+     */
+    private function assertModelCapable(string $model, string $capability, string $label): void
+    {
+        $models = $this->getCapabilityModels($capability);
+
+        if (!in_array($model, $models, true)) {
+            throw InvalidArgumentException::invalidModel($model, 'openai', $models, $label);
+        }
+    }
+
+    /**
      * Check if OpenAI provider is supported/configured.
      *
-     * @return  boolean  True if API key is available
+     * The API key comes from the api_key option and is checked when a request is made.
+     *
+     * @return  boolean  Always true
      * @since  __DEPLOY_VERSION__
      */
     public static function isSupported(): bool
     {
-        return !empty($_ENV['OPENAI_API_KEY']) ||
-               !empty(getenv('OPENAI_API_KEY'));
+        return true;
     }
 
     /**
@@ -269,8 +291,10 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getAvailableModels(): array
     {
         $headers = $this->buildHeaders();
-        $response = $this->makeGetRequest('https://api.openai.com/v1/models', $headers);
+        $response = $this->makeGetRequest($this->baseUrl . '/models', $headers);
         $data = $this->parseJsonResponse($response->getBody());
+
+        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
 
         return array_column($data['data'], 'id');
     }
@@ -284,7 +308,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getChatModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::CHAT_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('chat'));
     }
 
     /**
@@ -296,7 +320,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getVisionModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::VISION_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('vision'));
     }
 
     /**
@@ -308,7 +332,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getImageModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::IMAGE_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('image'));
     }
 
     /**
@@ -320,7 +344,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     public function getTTSModels(): array
     {
         $available = $this->getAvailableModels();
-        return $this->getModelsByCapability($available, self::TTS_MODELS);
+        return $this->getModelsByCapability($available, $this->getCapabilityModels('text-to-speech'));
     }
 
     /**
@@ -331,7 +355,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getTranscriptionModels(): array
     {
-        return self::TRANSCRIPTION_MODELS;
+        return $this->getCapabilityModels('transcription');
     }
 
     /**
@@ -342,7 +366,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getEmbeddingModels(): array
     {
-        return self::EMBEDDING_MODELS;
+        return $this->getCapabilityModels('embedding');
     }
 
     /**
@@ -353,7 +377,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getAvailableVoices(): array
     {
-        return self::VOICES;
+        return $this->getCapability('voices', null, []);
     }
 
     /**
@@ -364,7 +388,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getSupportedAudioFormats(): array
     {
-        return self::AUDIO_FORMATS;
+        return $this->getCapability('audio_formats', null, []);
     }
 
     /**
@@ -375,7 +399,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function getSupportedTranscriptionFormats(): array
     {
-        return self::TRANSCRIPTION_INPUT_FORMATS;
+        return $this->getCapability('transcription_input_formats', null, []);
     }
 
     /**
@@ -403,15 +427,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function isModelCapable(string $model, string $capability): bool
     {
-        $capabilityMap = [
-            'chat' => self::CHAT_MODELS,
-            'vision' => self::VISION_MODELS,
-            'image' => self::IMAGE_MODELS,
-            'text-to-speech' => self::TTS_MODELS,
-            'transcription' => self::TRANSCRIPTION_MODELS,
-            'embedding' => self::EMBEDDING_MODELS,
-        ];
-        return $this->checkModelCapability($model, $capability, $capabilityMap);
+        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
     }
 
     /**
@@ -425,26 +441,93 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function chat(string $message, array $options = []): Response
     {
-        // Apply moderation to the chat message
-        $isBlocked = $this->moderateInput($message, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
+        if (!empty($options['stream'])) {
+            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
         }
+
+        $this->assertNotFlagged($message);
 
         $payload = $this->buildChatRequestPayload($message, $options);
 
-        // To Do: Remove repetition
-        $endpoint = $this->getChatEndpoint();
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $endpoint,
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
 
         return $this->parseOpenAIResponse($httpResponse->getBody());
+    }
+
+    /**
+     * Stream a chat completion. Yields text deltas; getReturn() gives the final Response.
+     *
+     * @param   string  $message  The message to send
+     * @param   array   $options  The same options as chat()
+     *
+     * @return  \Generator<int, string, mixed, Response>
+     * @since   __DEPLOY_VERSION__
+     */
+    public function chatStream(string $message, array $options = []): \Generator
+    {
+        $this->assertNoToolsWhenStreaming($options);
+
+        $this->assertNotFlagged($message);
+
+        $payload = $this->buildChatRequestPayload($message, $options);
+        $payload['stream'] = true;
+        $payload['stream_options'] = ['include_usage' => true];
+
+        $chunks = $this->makeStreamingPostRequest($this->getChatEndpoint(), json_encode($payload), $this->buildHeaders());
+
+        $content = '';
+        $finishReason = null;
+        $usage = [];
+        $model = $payload['model'];
+        $id = null;
+
+        foreach ($this->readServerSentEvents($chunks) as $event) {
+            if ($event['data'] === '[DONE]') {
+                break;
+            }
+
+            $data = $this->decodeStreamEvent($event['data']);
+
+            if (isset($data['error'])) {
+                throw new ProviderException($this->getName(), $data);
+            }
+
+            $model = $data['model'] ?? $model;
+            $id = $data['id'] ?? $id;
+
+            if (is_array($data['usage'] ?? null)) {
+                $usage = $data['usage'];
+            }
+
+            $choice = $data['choices'][0] ?? null;
+            if (!is_array($choice)) {
+                continue;
+            }
+
+            $finishReason = $choice['finish_reason'] ?? $finishReason;
+            $delta = $choice['delta']['content'] ?? null;
+
+            if (is_string($delta) && $delta !== '') {
+                $content .= $delta;
+
+                yield $delta;
+            }
+        }
+
+        $metadata = [
+            'model' => $model,
+            'id' => $id,
+            'usage' => $usage,
+            'finish_reason' => $finishReason,
+            'stream' => true,
+        ] + $this->normaliseOpenAIUsage($usage);
+
+        return $this->recordResponse(new Response(
+            $content,
+            $this->getName(),
+            $metadata,
+            $this->determineAIStatusCode(['choices' => [['finish_reason' => $finishReason]]])
+        ));
     }
 
     /**
@@ -464,22 +547,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             ['type' => 'text', 'text' => $message],
             ['type' => 'image_url', 'image_url' => ['url' => $image]]
         ];
-        $isBlocked = $this->moderateInput($multiModalInput, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
-        }
+        $this->assertNotFlagged($multiModalInput);
 
         $payload = $this->buildVisionRequestPayload($message, $image, 'vision', $options);
 
-        $endpoint = $this->getChatEndpoint();
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $endpoint,
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getChatEndpoint(), $payload);
 
         return $this->parseOpenAIResponse($httpResponse->getBody());
     }
@@ -495,22 +567,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function generateImage(string $prompt, array $options = []): Response
     {
-        // Apply moderation to the image generation prompt
-        $isBlocked = $this->moderateInput($prompt, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
-        }
+        $this->assertNotFlagged($prompt);
 
         $payload = $this->buildImageRequestPayload($prompt, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getImageEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getImageEndpoint(), $payload);
 
         return $this->parseImageResponse($httpResponse->getBody(), $payload);
     }
@@ -542,21 +603,16 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Edit an image using OpenAI Image API.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   array   $options  Additional options for the request
      *
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function editImage($images, string $prompt, array $options = []): Response
+    public function editImage(string|array $images, string $prompt, array $options = []): Response
     {
-        // Apply moderation to the image editing prompt
-        $isBlocked = $this->moderateInput($prompt, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
-        }
+        $this->assertNotFlagged($prompt);
 
         $payload = $this->buildImageEditPayload($images, $prompt, $options);
 
@@ -582,18 +638,11 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     public function speech(string $text, array $options = []): Response
     {
-        // Apply moderation to the text input for speech generation
-        $isBlocked = $this->moderateInput($text, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
-        }
+        $this->assertNotFlagged($text);
 
         $payload = $this->buildSpeechPayload($text, $options);
 
-        $endpoint = $this->getAudioSpeechEndpoint();
-        $headers = $this->buildHeaders();
-        $httpResponse = $this->makePostRequest($endpoint, json_encode($payload), $headers);
+        $httpResponse = $this->postJson($this->getAudioSpeechEndpoint(), $payload);
 
         return $this->parseAudioResponse($httpResponse->getBody(), $payload);
     }
@@ -656,24 +705,13 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @return  Response
      * @since   __DEPLOY_VERSION__
      */
-    public function createEmbeddings($input, string $model, array $options = []): Response
+    public function createEmbeddings(string|array $input, string $model, array $options = []): Response
     {
-        // Apply moderation to the text input for embeddings
-        $isBlocked = $this->moderateInput($input, []);
-
-        if ($isBlocked) {
-            throw new \Exception('Content flagged by moderation system and blocked.');
-        }
+        $this->assertNotFlagged($input);
 
         $payload = $this->buildEmbeddingPayload($input, $model, $options);
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getEmbeddingsEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getEmbeddingsEndpoint(), $payload);
 
         return $this->parseEmbeddingResponse($httpResponse->getBody(), $payload);
     }
@@ -688,26 +726,18 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \Exception
      * @since   __DEPLOY_VERSION__
      */
-    public function moderate($input, array $options = []): array
+    public function moderate(string|array $input, array $options = []): array
     {
         $model = $options['model'] ?? 'omni-moderation-latest';
 
-        if (!in_array($model, self::MODERATION_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::MODERATION_MODELS, 'moderation');
-        }
+        $this->assertModelCapable($model, 'moderation', 'moderation');
 
         $payload = [
             'input' => $input,
             'model' => $model
         ];
 
-        $headers = $this->buildHeaders();
-
-        $httpResponse = $this->makePostRequest(
-            $this->getModerationEndpoint(),
-            json_encode($payload),
-            $headers
-        );
+        $httpResponse = $this->postJson($this->getModerationEndpoint(), $payload);
 
         $data = $this->parseJsonResponse($httpResponse->getBody());
 
@@ -759,6 +789,8 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                 ]
             ];
         }
+
+        $messages = $this->prependSystemMessage($messages, $options);
 
         $payload = [
             'model' => $model,
@@ -840,7 +872,147 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $payload['temperature'] = (float) $options['temperature'];
         }
 
+        return $this->addToolAndSchemaParameters($payload, $options);
+    }
+
+    /**
+     * Add tools, tool_choice and JSON schema output to a chat payload.
+     *
+     * @param   array  $payload  The request payload
+     * @param   array  $options  Request options (tools, tool_choice, parallel_tool_calls, response_schema)
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function addToolAndSchemaParameters(array $payload, array $options): array
+    {
+        $tools = $this->getToolDefinitions($options);
+
+        if ($tools !== []) {
+            $payload['tools'] = array_map(function (array $tool): array {
+                $function = [
+                    'name' => $tool['name'],
+                    'description' => $tool['description'],
+                    'parameters' => $tool['parameters'],
+                ];
+
+                if ($tool['strict'] !== null) {
+                    $function['strict'] = $tool['strict'];
+                }
+
+                return ['type' => 'function', 'function' => $function];
+            }, $tools);
+
+            if (isset($options['tool_choice'])) {
+                $choice = $options['tool_choice'];
+                $payload['tool_choice'] = is_array($choice) && isset($choice['name'])
+                    ? ['type' => 'function', 'function' => ['name' => $choice['name']]]
+                    : $choice;
+            }
+
+            if (isset($options['parallel_tool_calls'])) {
+                $payload['parallel_tool_calls'] = (bool) $options['parallel_tool_calls'];
+            }
+        }
+
+        $schema = $this->getResponseSchema($options);
+
+        if ($schema !== null) {
+            $payload['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => $schema['name'],
+                    'schema' => $schema['schema'],
+                    'strict' => $schema['strict'],
+                ],
+            ];
+        }
+
         return $payload;
+    }
+
+    /**
+     * Build the assistant message for a conversation history, keeping any tool calls.
+     *
+     * @param   Response  $response  The response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildAssistantMessage(Response $response): array
+    {
+        $message = $response->getMetadata()['choices'][0]['message'] ?? null;
+
+        // Streamed responses have no choices; their text is all there is
+        if (!is_array($message)) {
+            return parent::buildAssistantMessage($response);
+        }
+
+        return ['role' => 'assistant'] + array_intersect_key($message, array_flip(['content', 'tool_calls']));
+    }
+
+    /**
+     * Build the messages to append after running the tools requested in a response.
+     *
+     * @param   Response  $response  The response with tool calls
+     * @param   array     $results   Tool call id => result
+     *
+     * @return  array  The assistant message and one "tool" message per result
+     * @since   __DEPLOY_VERSION__
+     */
+    public function buildToolResultMessages(Response $response, array $results): array
+    {
+        $messages = [$this->buildAssistantMessage($response)];
+
+        foreach ($response->getToolCalls() as $call) {
+            if (!array_key_exists($call['id'], $results)) {
+                throw InvalidArgumentException::missingParameter("result for tool call '{$call['id']}'", 'openai');
+            }
+
+            $messages[] = [
+                'role' => 'tool',
+                'tool_call_id' => $call['id'],
+                'content' => $this->encodeToolResult($results[$call['id']]),
+            ];
+        }
+
+        return $messages;
+    }
+
+    /**
+     * Extract normalised tool calls from an OpenAI-style message.
+     *
+     * @param   array   $message       The assistant message
+     * @param   string  $responseBody  Raw response, for errors
+     *
+     * @return  array
+     * @throws  UnserializableResponseException  If tool call arguments are not valid JSON
+     * @since   __DEPLOY_VERSION__
+     */
+    private function extractToolCalls(array $message, string $responseBody): array
+    {
+        $calls = [];
+
+        foreach ((array) ($message['tool_calls'] ?? []) as $toolCall) {
+            if (!is_array($toolCall) || !is_string($toolCall['function']['name'] ?? null)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Tool call in response is missing a function name');
+            }
+
+            $arguments = $toolCall['function']['arguments'] ?? '{}';
+            $decoded = is_array($arguments) ? $arguments : json_decode((string) $arguments, true);
+
+            if (!is_array($decoded)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, "Arguments for tool '{$toolCall['function']['name']}' are not valid JSON");
+            }
+
+            $calls[] = [
+                'id' => (string) ($toolCall['id'] ?? ''),
+                'name' => $toolCall['function']['name'],
+                'arguments' => $decoded,
+            ];
+        }
+
+        return $calls;
     }
 
     /**
@@ -858,9 +1030,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-mini');
 
-        if (!$this->isModelCapable($model, $capability)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::VISION_MODELS, $capability);
-        }
+        $this->assertModelCapable($model, $capability, $capability);
 
         $content = [
             [
@@ -885,7 +1055,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             ]
         ];
 
-        // To Do: Add optional parameters if provided
+        // Same optional parameters as chat()
         if (isset($options['max_tokens'])) {
             $payload['max_tokens'] = (int) $options['max_tokens'];
         }
@@ -895,10 +1065,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         if (isset($options['n'])) {
-            $payload['n'] = (int) $options['n'];
+            $n = (int) $options['n'];
+            if ($n < 1 || $n > 128) {
+                throw InvalidArgumentException::invalidParameter('n', $options['n'], 'openai', 'Parameter "n" must be between 1 and 128.', ['min_value' => 1, 'max_value' => 128]);
+            }
+            $payload['n'] = $n;
         }
 
-        return $payload;
+        return $this->addToolAndSchemaParameters($payload, $options);
     }
 
     /**
@@ -914,9 +1088,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'dall-e-2');
 
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1', 'dall-e-3'])) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::IMAGE_MODELS, 'image generation');
-        }
+        $this->assertModelCapable($model, 'image', 'image generation');
 
         $this->validateImagePrompt($prompt, $model);
 
@@ -1023,16 +1195,14 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     {
         $model = $options['model'] ?? $this->defaultModel ?? 'dall-e-2';
 
-        // Only dall-e-2 supports variations
-        if ($model !== 'dall-e-2') {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2'], 'image variation');
-        }
+        $this->assertModelCapable($model, 'image-variation', 'image variation');
 
         $this->validateImageFile($imagePath, $model, 'variation');
 
         $payload = [
             'model' => $model,
-            'image' => file_get_contents($imagePath)
+            'image' => file_get_contents($imagePath),
+            '_image_filenames' => [basename($imagePath)]
         ];
 
         if (isset($options['n'])) {
@@ -1044,10 +1214,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         if (isset($options['size'])) {
-            $validSizes = ['256x256', '512x512', '1024x1024'];
-            if (!in_array($options['size'], $validSizes)) {
-                throw InvalidArgumentException::invalidParameter('size', $options['size'], 'openai', 'Size must be one of: ' . implode(', ', $validSizes), ['valid_values' => $validSizes]);
-            }
+            $this->validateImageSize($options['size'], $model, 'variation');
             $payload['size'] = $options['size'];
         }
 
@@ -1073,21 +1240,18 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
     /**
      * Build payload for image editing request.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   array   $options  Additional options
      *
      * @return  array
      * @since   __DEPLOY_VERSION__
      */
-    private function buildImageEditPayload($images, string $prompt, array $options): array
+    private function buildImageEditPayload(string|array $images, string $prompt, array $options): array
     {
         $model = $options['model'] ?? $this->defaultModel ??  $this->getOption('model', 'dall-e-2');
 
-        // Only dall-e-2 and gpt-image-1 support image editing
-        if (!in_array($model, ['dall-e-2', 'gpt-image-1'])) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['dall-e-2', 'gpt-image-1'], 'image editing');
-        }
+        $this->assertModelCapable($model, 'image-edit', 'image editing');
 
         $this->validateImageEditInputs($images, $prompt, $model, $options);
 
@@ -1100,6 +1264,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if (is_string($images)) {
             // Single image
             $payload['image'] = file_get_contents($images);
+            $payload['_image_filenames'] = [basename($images)];
         } else {
             // Multiple images for gpt-image-1 model
             if ($model !== 'gpt-image-1') {
@@ -1112,6 +1277,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                     throw InvalidArgumentException::fileNotFound($imagePath, 'openai');
                 }
                 $imageArray[] = file_get_contents($imagePath);
+                $payload['_image_filenames'][] = basename($imagePath);
             }
             $payload['image'] = $imageArray;
         }
@@ -1120,6 +1286,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if (isset($options['mask'])) {
             $this->validateMaskFile($options['mask']);
             $payload['mask'] = file_get_contents($options['mask']);
+            $payload['_mask_filename'] = basename($options['mask']);
         }
 
         if (isset($options['n'])) {
@@ -1201,18 +1368,18 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $voice = $options['voice'] ?? $this->getOption('voice', 'alloy');
 
         // Validate model
-        if (!in_array($model, self::TTS_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::TTS_MODELS, 'text-to-speech');
-        }
+        $this->assertModelCapable($model, 'text-to-speech', 'text-to-speech');
 
         // Validate voice
-        if (!in_array($voice, self::VOICES)) {
-            throw InvalidArgumentException::invalidVoice($voice, self::VOICES, 'openai');
+        $voices = $this->getCapability('voices', null, []);
+        if (!in_array($voice, $voices)) {
+            throw InvalidArgumentException::invalidVoice($voice, $voices, 'openai');
         }
 
         // Validate input text
-        if (strlen($text) > 4096) {
-            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', 'Speech input text cannot exceed 4096 characters, got: ' . strlen($text) . ' characters.', ['max_length' => 4096, 'actual_length' => strlen($text)]);
+        $maxLength = $this->getCapability('speech_max_length');
+        if ($maxLength !== null && strlen($text) > $maxLength) {
+            throw InvalidArgumentException::invalidParameter('text', $text, 'openai', "Speech input text cannot exceed $maxLength characters, got: " . strlen($text) . ' characters.', ['max_length' => $maxLength, 'actual_length' => strlen($text)]);
         }
 
         $payload = [
@@ -1222,8 +1389,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         ];
 
         $responseFormat = $options['response_format'] ?? 'mp3';
-        if (!in_array($responseFormat, self::AUDIO_FORMATS)) {
-            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', 'Audio response format must be one of: ' . implode(', ', self::AUDIO_FORMATS), ['valid_formats' => self::AUDIO_FORMATS]);
+        $audioFormats = $this->getCapability('audio_formats', null, []);
+        if (!in_array($responseFormat, $audioFormats)) {
+            throw InvalidArgumentException::invalidParameter('response_format', $responseFormat, 'openai', 'Audio response format must be one of: ' . implode(', ', $audioFormats), ['valid_formats' => $audioFormats]);
         }
         $payload['response_format'] = $responseFormat;
 
@@ -1276,9 +1444,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'gpt-4o-transcribe');
 
         // Validate model
-        if (!in_array($model, self::TRANSCRIPTION_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::TRANSCRIPTION_MODELS, 'transcription');
-        }
+        $this->assertModelCapable($model, 'transcription', 'transcription');
 
         $payload = [
             'model' => $model,
@@ -1385,9 +1551,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $model = $options['model'] ?? $this->defaultModel ?? $this->getOption('model', 'whisper-1');
 
         // Validate model
-        if ($model !== 'whisper-1') {
-            throw InvalidArgumentException::invalidModel($model, 'openai', ['whisper-1'], 'translation');
-        }
+        $this->assertModelCapable($model, 'translation', 'translation');
 
         $payload = [
             'model' => $model,
@@ -1429,12 +1593,10 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \InvalidArgumentException  If parameters are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function buildEmbeddingPayload($input, string $model, array $options): array
+    private function buildEmbeddingPayload(string|array $input, string $model, array $options): array
     {
         // Validate model
-        if (!in_array($model, self::EMBEDDING_MODELS)) {
-            throw InvalidArgumentException::invalidModel($model, 'openai', self::EMBEDDING_MODELS, 'embedding');
-        }
+        $this->assertModelCapable($model, 'embedding', 'embedding');
 
         $payload = [
             'input' => $input,
@@ -1448,12 +1610,13 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $payload['encoding_format'] = $encodingFormat;
 
         if (isset($options['dimensions'])) {
-            if (!in_array($model, ['text-embedding-3-large', 'text-embedding-3-small'])) {
-                throw InvalidArgumentException::invalidParameter('dimensions', $options['dimensions'], 'openai', "Dimensions parameter is only supported for text-embedding-3-large and text-embedding-3-small models.");
+            $maxDimensionsMap = $this->getCapability('embedding_max_dimensions', null, []);
+            if (!isset($maxDimensionsMap[$model])) {
+                throw InvalidArgumentException::invalidParameter('dimensions', $options['dimensions'], 'openai', 'Dimensions parameter is only supported for ' . implode(', ', array_keys($maxDimensionsMap)) . ' models.');
             }
 
             $dimensions = (int) $options['dimensions'];
-            $maxDimensions = $model === 'text-embedding-3-large' ? 3072 : 1536;
+            $maxDimensions = $maxDimensionsMap[$model];
 
             if ($dimensions < 1 || $dimensions > $maxDimensions) {
                 throw InvalidArgumentException::invalidParameter('dimensions', $dimensions, 'openai', "Dimensions must be between 1 and $maxDimensions for $model.");
@@ -1467,6 +1630,47 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         }
 
         return $payload;
+    }
+
+    /**
+     * POST a JSON payload to an OpenAI endpoint with the standard headers.
+     *
+     * @param   string  $endpoint  The endpoint URL
+     * @param   array   $payload   The request payload
+     *
+     * @return  \Joomla\Http\Response
+     * @throws  ProviderException  If the payload cannot be encoded
+     * @since   __DEPLOY_VERSION__
+     */
+    private function postJson(string $endpoint, array $payload): HttpResponse
+    {
+        $json = json_encode($payload);
+
+        if ($json === false) {
+            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
+        }
+
+        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
+    }
+
+    /**
+     * Throw if automatic moderation flags the input (see the "moderate_input" option).
+     *
+     * @param   string|array  $input  Text or multimodal input
+     *
+     * @throws  AIException  If the content is flagged
+     * @since   __DEPLOY_VERSION__
+     */
+    private function assertNotFlagged(string|array $input): void
+    {
+        // Nothing new to check, e.g. a conversation turn that only sends tool results
+        if ($input === '' || $input === []) {
+            return;
+        }
+
+        if ($this->moderateInput($input, [])) {
+            throw new AIException('Content flagged by moderation system and blocked.', $this->getName(), [], null, null, null);
+        }
     }
 
     /**
@@ -1511,15 +1715,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function getApiKey(): string
     {
-        // To do: Move this to a configuration file or environment variable
-        $apiKey = $this->getOption('api_key') ??
-                  $_ENV['OPENAI_API_KEY'] ??
-                  getenv('OPENAI_API_KEY');
+        $apiKey = $this->getOption('api_key');
 
         if (empty($apiKey)) {
             throw new AuthenticationException(
                 $this->getName(),
-                ['message' => 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable or provide api_key option.'],
+                ['message' => 'OpenAI API key not configured. Provide the api_key option.'],
                 401
             );
         }
@@ -1544,25 +1745,75 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['choices.0[]'], $responseBody);
+
         // Handle multiple choices - use first choice for content, but include all in metadata
-        $content = $data['choices'][0]['message']['content'] ?? '';
+        $content = (string) ($data['choices'][0]['message']['content'] ?? '');
 
         $statusCode = $this->determineAIStatusCode($data);
+        $usage = is_array($data['usage'] ?? null) ? $data['usage'] : [];
 
         $metadata = [
-            'model' => $data['model'],
-            'usage' => $data['usage'],
-            'finish_reason' => $data['choices'][0]['finish_reason'],
+            'model' => $data['model'] ?? null,
+            'usage' => $usage,
+            'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
             'created' => $data['created'] ?? time(),
-            'id' => $data['id'],
-            'choices' => $data['choices']
-        ];
+            'id' => $data['id'] ?? null,
+            'choices' => $data['choices'],
+            'tool_calls' => $this->extractToolCalls((array) ($data['choices'][0]['message'] ?? []), $responseBody)
+        ] + $this->normaliseOpenAIUsage($usage);
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             $statusCode
+        ));
+    }
+
+    /**
+     * Turn embedding entries into float vectors ordered by index, decoding base64 (little-endian float32).
+     *
+     * @param   array   $embeddings    Entries with "embedding" and "index"
+     * @param   string  $responseBody  Raw response, for errors
+     *
+     * @return  array<int, array<int, float>>
+     * @throws  UnserializableResponseException  If base64 data cannot be decoded
+     * @since   __DEPLOY_VERSION__
+     */
+    private function decodeEmbeddings(array $embeddings, string $responseBody): array
+    {
+        usort($embeddings, fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+
+        return array_map(function (array $entry) use ($responseBody): array {
+            if (is_array($entry['embedding'])) {
+                return array_map('floatval', $entry['embedding']);
+            }
+
+            $binary = base64_decode($entry['embedding'], true);
+
+            if ($binary === false || strlen($binary) % 4 !== 0) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Base64 embedding could not be decoded');
+            }
+
+            return array_values(unpack('g*', $binary));
+        }, $embeddings);
+    }
+
+    /**
+     * Normalise an OpenAI usage block (chat uses prompt/completion, images use input/output tokens).
+     *
+     * @param   array  $usage  The usage block from the API response
+     *
+     * @return  array
+     * @since   __DEPLOY_VERSION__
+     */
+    private function normaliseOpenAIUsage(array $usage): array
+    {
+        return $this->normaliseUsage(
+            $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null,
+            $usage['output_tokens'] ?? $usage['completion_tokens'] ?? null,
+            $usage['total_tokens'] ?? null
         );
     }
 
@@ -1577,55 +1828,38 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function parseImageResponse(string $responseBody, array $payload): Response
     {
-        // To Do: Clean Image API response for generation and editing
         $data = $this->parseJsonResponse($responseBody);
-        // error_log('OpenAI Image Response: ' . print_r($data, true));
 
         if (isset($data['error'])) {
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['data[]'], $responseBody);
+
+        // Generation and editing return the same shape: a list of {url|b64_json, revised_prompt?}
         $images = [];
         $responseFormat = '';
 
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $imageData) {
-                $imageItem = [];
+        foreach ($data['data'] as $imageData) {
+            if (!is_array($imageData)) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Image entries in response must be objects');
+            }
 
-                // Handle URL format
-                if (isset($imageData['url'])) {
-                    $imageItem['url'] = $imageData['url'];
-                    $responseFormat = 'url';
-                }
+            $images[] = array_intersect_key($imageData, array_flip(['url', 'b64_json', 'revised_prompt']));
 
-                // Handle base64 format
-                if (isset($imageData['b64_json'])) {
-                    $imageItem['b64_json'] = $imageData['b64_json'];
-                    $responseFormat = 'b64_json';
-                }
-
-                // Handle revised prompt (DALL-E 3 only)
-                if (isset($imageData['revised_prompt'])) {
-                    $imageItem['revised_prompt'] = $imageData['revised_prompt'];
-                }
-
-                $images[] = $imageItem;
+            if (isset($imageData['b64_json'])) {
+                $responseFormat = 'b64_json';
+            } elseif (isset($imageData['url'])) {
+                $responseFormat = 'url';
             }
         }
 
-        $content = '';
-        if ($responseFormat === 'url') {
-            // For URLs, create a clean list
-            $urls = array_column($images, 'url');
-            $content = count($urls) === 1 ? $urls[0] : json_encode($urls, JSON_PRETTY_PRINT);
-        } elseif ($responseFormat === 'b64_json') {
-            // For base64, return the data
-            $base64Data = array_column($images, 'b64_json');
-            $content = count($base64Data) === 1 ? $base64Data[0] : json_encode($base64Data, JSON_PRETTY_PRINT);
-        }
+        // One image: the URL or base64 string; several: a JSON list of them
+        $values = $responseFormat === '' ? [] : array_column($images, $responseFormat);
+        $content = count($values) === 1 ? $values[0] : ($values === [] ? '' : json_encode($values, JSON_PRETTY_PRINT));
 
         $metadata = [
-            'model' => $data['model'] ?? $payload['model'],
+            'model' => $data['model'] ?? $payload['model'] ?? null,
             'created' => $data['created'] ?? time(),
             'response_format' => $responseFormat,
             'image_count' => count($images),
@@ -1635,23 +1869,21 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         if ($responseFormat === 'url') {
             $metadata['url_expires'] = 'URLs are valid for 60 minutes';
         } elseif ($responseFormat === 'b64_json') {
-            $metadata['format'] = 'base64_png';
+            // gpt-image-1 can return jpeg or webp; the other models return png
+            $metadata['format'] = 'base64_' . ($data['output_format'] ?? $payload['output_format'] ?? 'png');
         }
 
-        if (isset($data['usage'])) {
+        if (isset($data['usage']) && is_array($data['usage'])) {
             $metadata['usage'] = $data['usage'];
+            $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
 
-        if (isset($data['model'])) {
-            $metadata['model'] = $data['model'];
-        }
-
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -1690,12 +1922,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             $metadata['instructions'] = $payload['instructions'];
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $responseBody, // Binary audio data
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -1724,15 +1956,16 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                     throw new ProviderException($this->getName(), $data);
                 }
 
-                $content = $data['text'] ?? '';
+                $content = (string) ($data['text'] ?? '');
                 $metadata = [
                     'model' => $payload['model'],
                     'response_format' => $responseFormat,
                     'created' => time()
                 ];
 
-                if (isset($data['usage'])) {
+                if (isset($data['usage']) && is_array($data['usage'])) {
                     $metadata['usage'] = $data['usage'];
+                    $metadata += $this->normaliseOpenAIUsage($data['usage']);
                 }
 
                 // Add language info for transcription
@@ -1781,12 +2014,12 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                 throw new ProviderException($this->getName(), ['error' => 'Unsupported response format: ' . $responseFormat]);
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -1806,15 +2039,20 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw new ProviderException($this->getName(), $data);
         }
 
+        $this->assertResponseFields($data, ['data[]'], $responseBody);
+
         $embeddings = [];
-        if (isset($data['data']) && is_array($data['data'])) {
-            foreach ($data['data'] as $embeddingData) {
-                $embeddings[] = [
-                    'embedding' => $embeddingData['embedding'],
-                    'index' => $embeddingData['index'],
-                    'object' => $embeddingData['object']
-                ];
+        foreach ($data['data'] as $embeddingData) {
+            // "embedding" is a float array, or a base64 string when encoding_format is base64
+            if (!is_array($embeddingData) || !(is_array($embeddingData['embedding'] ?? null) || is_string($embeddingData['embedding'] ?? null))) {
+                throw new UnserializableResponseException($this->getName(), $responseBody, 'Embedding entries in response must contain an embedding');
             }
+
+            $embeddings[] = [
+                'embedding' => $embeddingData['embedding'],
+                'index' => $embeddingData['index'] ?? count($embeddings),
+                'object' => $embeddingData['object'] ?? 'embedding'
+            ];
         }
 
         $contentData = count($embeddings) === 1 ? $embeddings[0]['embedding'] : $embeddings;
@@ -1822,27 +2060,29 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
 
         $metadata = [
             'model' => $data['model'] ?? $payload['model'],
-            'object' => $data['object'],
+            'object' => $data['object'] ?? null,
             'embedding_count' => count($embeddings),
             'encoding_format' => $payload['encoding_format'],
             'input_type' => is_array($payload['input']) ? 'array' : 'string',
             'raw_embeddings' => $embeddings,
+            'embeddings' => $this->decodeEmbeddings($embeddings, $responseBody),
         ];
 
-        if (isset($data['usage'])) {
+        if (isset($data['usage']) && is_array($data['usage'])) {
             $metadata['usage'] = $data['usage'];
+            $metadata += $this->normaliseOpenAIUsage($data['usage']);
         }
 
         if (isset($payload['dimensions'])) {
             $metadata['requested_dimensions'] = $payload['dimensions'];
         }
 
-        return new Response(
+        return $this->recordResponse(new Response(
             $content,
             $this->getName(),
             $metadata,
             200
-        );
+        ));
     }
 
     /**
@@ -1888,23 +2128,18 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImagePrompt(string $prompt, string $model): void
     {
-        // Max lengths per model
-        $maxLengths = [
-            'gpt-image-1' => 32000,
-            'dall-e-2' => 1000,
-            'dall-e-3' => 4000
-        ];
+        $maxLength = $this->getCapability('image_prompt_max_length', $model);
 
         // Validate prompt length
-        if (isset($maxLengths[$model]) && strlen(trim($prompt)) > $maxLengths[$model]) {
-            throw InvalidArgumentException::invalidParameter('prompt', $prompt, 'openai', "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ({$maxLengths[$model]} characters)");
+        if ($maxLength !== null && strlen(trim($prompt)) > $maxLength) {
+            throw InvalidArgumentException::invalidParameter('prompt', $prompt, 'openai', "Prompt length (" . strlen(trim($prompt)) . ") exceeds maximum for $model ($maxLength characters)");
         }
     }
 
     /**
      * Validate inputs for image editing.
      *
-     * @param   mixed   $images   Single image path or array of image paths
+     * @param   string|array  $images   Single image path or array of image paths
      * @param   string  $prompt   Description of desired edits
      * @param   string  $model    The model to use
      * @param   array   $options  Additional options
@@ -1912,7 +2147,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      * @throws  \InvalidArgumentException  If inputs are invalid
      * @since   __DEPLOY_VERSION__
      */
-    private function validateImageEditInputs($images, string $prompt, string $model, array $options): void
+    private function validateImageEditInputs(string|array $images, string $prompt, string $model, array $options): void
     {
         $this->validateImagePrompt($prompt, $model);
 
@@ -1924,8 +2159,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
                 throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Multiple images only supported with gpt-image-1 model.');
             }
 
-            if (count($images) > 16) {
-                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', 'Maximum 16 images allowed for gpt-image-1.');
+            $maxImages = $this->getCapability('image_edit_max_images');
+            if ($maxImages !== null && count($images) > $maxImages) {
+                throw InvalidArgumentException::invalidParameter('images', $images, 'openai', "Maximum $maxImages images allowed for gpt-image-1.");
             }
 
             foreach ($images as $imagePath) {
@@ -1954,23 +2190,20 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $fileInfo = pathinfo($imagePath);
         $extension = strtolower($fileInfo['extension'] ?? '');
 
+        $maxMb = $this->getCapability('image_file_max_mb', $model);
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, $maxMb, $model, 'openai');
+        }
+
         if ($model === 'gpt-image-1') {
-            // gpt-image-1 supports png, webp, jpg, max 50MB
+            // gpt-image-1 supports png, webp, jpg
             if (!in_array($extension, ['png', 'webp', 'jpg', 'jpeg'])) {
                 throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For gpt-image-1, image must be png, webp, or jpg. Got: $extension");
             }
-
-            if ($fileSize > 50 * 1024 * 1024) { // 50MB
-                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 50, $model, 'openai');
-            }
         } elseif ($model === 'dall-e-2') {
-            // dall-e-2 requires square PNG, max 4MB
+            // dall-e-2 requires square PNG
             if ($extension !== 'png') {
                 throw InvalidArgumentException::invalidParameter('image', $imagePath, 'openai', "For dall-e-2, image must be a PNG file. Got: $extension");
-            }
-
-            if ($fileSize > 4 * 1024 * 1024) { // 4MB
-                throw InvalidArgumentException::fileSizeExceeded($imagePath, $fileSize, 4, $model, 'openai');
             }
 
             // Check if image is square (for variations)
@@ -2008,8 +2241,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
             throw InvalidArgumentException::invalidFileFormat($maskPath, $extension, ['png'], 'openai');
         }
 
-        if ($fileSize > 4 * 1024 * 1024) { // 4MB
-            throw InvalidArgumentException::fileSizeExceeded($maskPath, $fileSize, 4, 'openai');
+        $maxMb = $this->getCapability('mask_file_max_mb');
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($maskPath, $fileSize, $maxMb, 'openai');
         }
     }
 
@@ -2025,23 +2259,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImageSize(string $size, string $model, string $operation): void
     {
-        $validSizes = [];
+        $validSizes = $this->getCapability('image_sizes', $model);
 
-        switch ($model) {
-            case 'gpt-image-1':
-                $validSizes = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
-                break;
-
-            case 'dall-e-2':
-                $validSizes = ['256x256', '512x512', '1024x1024'];
-                break;
-
-            case 'dall-e-3':
-                $validSizes = ['1024x1024', '1792x1024', '1024x1792'];
-                break;
-        }
-
-        if (!in_array($size, $validSizes)) {
+        if ($validSizes !== null && !in_array($size, $validSizes)) {
             throw InvalidArgumentException::invalidImageSize($size, $validSizes, $model, $operation);
         }
     }
@@ -2057,23 +2277,9 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function validateImageQuality(string $quality, string $model): void
     {
-        $validQualities = [];
+        $validQualities = $this->getCapability('image_qualities', $model);
 
-        switch ($model) {
-            case 'gpt-image-1':
-                $validQualities = ['auto', 'high', 'medium', 'low'];
-                break;
-
-            case 'dall-e-2':
-                $validQualities = ['standard'];
-                break;
-
-            case 'dall-e-3':
-                $validQualities = ['auto', 'hd', 'standard'];
-                break;
-        }
-
-        if (!in_array($quality, $validQualities)) {
+        if ($validQualities !== null && !in_array($quality, $validQualities)) {
             throw InvalidArgumentException::invalidParameter('quality', $quality, 'openai', 'Valid qualities: ' . implode(', ', $validQualities) . ' for model: ' . $model);
         }
     }
@@ -2101,14 +2307,16 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
         $fileInfo = pathinfo($audioFile);
         $extension = strtolower($fileInfo['extension'] ?? '');
 
-        if (!in_array($extension, self::TRANSCRIPTION_INPUT_FORMATS)) {
-            throw InvalidArgumentException::invalidFileFormat($audioFile, $extension, self::TRANSCRIPTION_INPUT_FORMATS, 'openai');
+        $inputFormats = $this->getCapability('transcription_input_formats', null, []);
+        if (!in_array($extension, $inputFormats)) {
+            throw InvalidArgumentException::invalidFileFormat($audioFile, $extension, $inputFormats, 'openai');
         }
 
-        // Check file size (OpenAI has a 25MB limit for audio files)
+        // Check file size
         $fileSize = filesize($audioFile);
-        if ($fileSize > 25 * 1024 * 1024) { // 25MB
-            throw InvalidArgumentException::fileSizeExceeded($audioFile, $fileSize, 25, 'openai');
+        $maxMb = $this->getCapability('audio_file_max_mb');
+        if ($maxMb !== null && $fileSize > $maxMb * 1024 * 1024) {
+            throw InvalidArgumentException::fileSizeExceeded($audioFile, $fileSize, $maxMb, 'openai');
         }
     }
 
@@ -2122,7 +2330,7 @@ class OpenAIProvider extends AbstractProvider implements ProviderInterface, Chat
      */
     private function determineAIStatusCode(array $data): int
     {
-        $finishReason = $data['choices'][0]['finish_reason'];
+        $finishReason = $data['choices'][0]['finish_reason'] ?? null;
 
         switch ($finishReason) {
             case 'stop':

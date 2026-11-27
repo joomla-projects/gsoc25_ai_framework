@@ -29,9 +29,10 @@ class ProviderException extends AIException
     public function __construct(string $provider, string|array $errorData, ?int $httpStatusCode = null, string|int|null $providerErrorCode = null)
     {
         $context = ['error_data' => $errorData];
-        $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;
-        $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? 'Unknown Error';
+        $errorType = 'Unknown Error';
         if (is_array($errorData)) {
+            $providerErrorCode = $providerErrorCode ?? $errorData['code'] ?? $errorData['error']['code'] ?? null;
+            $errorType = $errorData['type'] ?? $errorData['error']['type'] ?? $errorType;
             $message = $errorData['message'] ?? $errorData['error']['message'] ?? $errorData['error'] ?? 'Unknown provider error';
         } else {
             $message = $errorData;

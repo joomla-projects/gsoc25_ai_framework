@@ -10,16 +10,22 @@ The Anthropic Provider ([`AnthropicProvider`](../../src/Provider/AnthropicProvid
 | **Vision** | Image analysis and description using Claude's vision capabilities |
 | **Model Management** | List available models and retrieve model information |
 
+Streaming, tool calling, JSON schema output, conversations and limits are described in [Features](../features.md).
+
 ## Configuration
 
 ```php
 use Joomla\AI\AIFactory;
 
-$anthropic = AIFactory::getAI('anthropic', [
-    'api_key' => getenv('ANTHROPIC_API_KEY'),
-    'model' => 'claude-3-5-sonnet' // Optional: default model
+$anthropic = (new AIFactory())->getAI('anthropic', [
+    'api_key' => getenv('ANTHROPIC_API_KEY'), // Required: the key is only read from this option
+    'model' => 'claude-opus-5-5', // Optional: default model
+    'timeout' => 60, // Optional: request timeout in seconds
+    'http_options' => [], // Optional: passed to HttpFactory::getHttp()
 ]);
 ```
+
+Vision accepts an `http(s)` image URL (sent to Anthropic as a URL source, Anthropic fetches it) or a base64 data URI. Local file paths are not read; encode the file yourself as shown below.
 
 ## Chat Completions
 
@@ -32,17 +38,22 @@ echo $response->getContent();
 ### Advanced Chat with options
 ```php
 $response = $anthropic->chat("How do I optimize database queries in Joomla?", [
-    'model' => 'claude-3-5-sonnet',
+    'model' => 'claude-opus-5-5',
     'max_tokens' => 1000,
-    'temperature' => 0.3
+    'system' => 'You are a Joomla performance expert. Answer concisely.'
 ]);
 
 $metadata = $response->getMetadata();
 echo "Model used: " . $metadata['model'] . "\n";
-echo "Tokens used: " . $metadata['usage']['input_tokens'] + $metadata['usage']['output_tokens'] . "\n";
+echo "Tokens used: " . $response->getUsage()['total_tokens'] . "\n";
+echo "Finish reason: " . $response->getFinishReason() . "\n";
 ```
 
+`temperature`, `top_p` and `top_k` are passed through when set, but current Claude models (e.g. `claude-opus-5-5`, `claude-sonnet-5-5`) reject non-default sampling values with a 400 error. Steer the output with `system` instead.
+
 ### Message History
+Pass the history yourself, or use a [conversation](../features.md#conversations) to keep it for you. When you pass it yourself, send earlier assistant turns back exactly as returned: `buildAssistantMessage($response)` gives the right format, thinking blocks included.
+
 ```php
 $response = $anthropic->chat("", [
     'messages' => [
@@ -77,7 +88,7 @@ $response = $anthropic->vision(
     "Review this UI mockup and provide detailed feedback on the design principles",
     "data:image/png;base64," . $imageData,
     [
-        'model' => 'claude-3-5-sonnet',
+        'model' => 'claude-opus-5-5',
         'max_tokens' => 1500
     ]
 );
@@ -93,49 +104,29 @@ $models = $anthropic->getAvailableModels();
 echo "Available Models: " . implode(', ', $models) . "\n";
 ```
 
-## Default Model Management
-
-Set defaults for consistent model usage:
-
-```php
-// Set a default model
-$anthropic->setDefaultModel('claude-3-5-sonnet');
-
-// These will use the default
-$chat1 = $anthropic->chat("What is web accessibility?");
-$vision1 = $anthropic->vision("Describe this image", $imageUrl);
-
-// Override for specific calls
-$detailed = $anthropic->chat("Provide a comprehensive analysis", [
-    'model' => 'claude-3-opus',
-    'max_tokens' => 2000
-]);
-
-// Clear the default
-$anthropic->unsetDefaultModel();
-```
-
 ## Error Handling
 
-Anthropic-specific error patterns:
+Invalid requests are rejected by the API and arrive as a `ProviderException` with the API's message:
 
 ```php
 use Joomla\AI\Exception\AuthenticationException;
+use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Exception\RateLimitException;
-use Joomla\AI\Exception\InvalidArgumentException;
 
 try {
     $response = $anthropic->chat("Hello", [
-        'max_tokens' => 500000 // Exceeds model limit
+        'max_tokens' => 500000 // more than the model allows
     ]);
-} catch (InvalidArgumentException $e) {
-    echo "Parameter error: " . $e->getMessage();
 } catch (AuthenticationException $e) {
     echo "Authentication failed: Check your API key";
 } catch (RateLimitException $e) {
     echo "Rate limited: " . $e->getMessage();
+} catch (ProviderException $e) {
+    echo "Request rejected (HTTP " . $e->getHttpStatusCode() . "): " . $e->getMessage();
 }
 ```
+
+Overloaded (529) and other temporary errors are [retried](../features.md#retries) before an exception is thrown.
 
 ## Next Steps
 

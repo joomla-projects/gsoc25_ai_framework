@@ -24,7 +24,7 @@ class QuotaExceededException extends AIException
      *
      * @since   __DEPLOY_VERSION__
      */
-    public function __construct(string $provider, array $errorData, $httpStatusCode)
+    public function __construct(string $provider, array $errorData, ?int $httpStatusCode)
     {
         $context = ['error_data' => $errorData];
         $providerErrorCode = $errorData['code'] ?? $errorData['error']['code'] ?? null;

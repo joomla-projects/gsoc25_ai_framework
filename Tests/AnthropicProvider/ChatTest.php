@@ -16,9 +16,9 @@ class ChatTest extends TestCase
 {
     public function testChatReturnsSuccessfulResponse(): void
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
         $httpClientMock = $this->createMock(Http::class);
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $chatResponse = $this->createJsonResponse([
             'id' => 'msg_123',
@@ -51,7 +51,7 @@ class ChatTest extends TestCase
             null
         )->willReturn($chatResponse);
 
-        $provider = new AnthropicProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        $provider = new AnthropicProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
         $response = $provider->chat('Hello there');
 
         $this->assertSame(200, $response->getStatusCode());
@@ -132,12 +132,12 @@ class ChatTest extends TestCase
 
     public function testChatThrowsAuthenticationExceptionWhenApiKeyMissing(): void
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
 
         $provider = new AnthropicProvider([], $httpFactoryMock);
 
         $this->expectException(AuthenticationException::class);
-        $this->expectExceptionMessage('Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable or provide api_key option.');
+        $this->expectExceptionMessage('Anthropic API key not configured. Provide the api_key option.');
 
         $provider->chat('Hi');
     }
@@ -155,16 +155,56 @@ class ChatTest extends TestCase
         $provider->chat('Return malformed payload');
     }
 
+    public function testChatThrowsUnserializableResponseExceptionWhenContentMissing(): void
+    {
+        $provider = $this->createProviderWithResponses([
+            $this->createJsonResponse([
+                'id' => 'msg_broken',
+                'type' => 'message',
+            ]),
+        ]);
+
+        $this->expectException(UnserializableResponseException::class);
+        $this->expectExceptionMessage("Missing field 'content'");
+
+        $provider->chat('Hello?');
+    }
+
+    public function testChatJoinsTextBlocksAndSkipsThinking(): void
+    {
+        $provider = $this->createProviderWithResponses([
+            $this->createJsonResponse([
+                'id' => 'msg_thinking',
+                'type' => 'message',
+                'role' => 'assistant',
+                'model' => 'claude-opus-5-5',
+                'content' => [
+                    ['type' => 'thinking', 'thinking' => '', 'signature' => 'sig'],
+                    ['type' => 'text', 'text' => 'Hello '],
+                    ['type' => 'text', 'text' => 'there'],
+                ],
+                'usage' => ['input_tokens' => 5, 'output_tokens' => 7],
+                'stop_reason' => 'end_turn',
+            ]),
+        ]);
+
+        $response = $provider->chat('Hi');
+
+        $this->assertSame('Hello there', $response->getContent());
+        $this->assertSame('stop', $response->getFinishReason());
+        $this->assertSame(['input_tokens' => 5, 'output_tokens' => 7, 'total_tokens' => 12], $response->getUsage());
+    }
+
     private function createProviderWithResponses(array $responses): AnthropicProvider
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock = $this->createMock(Http::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock = $this->createStub(Http::class);
 
-        $httpFactoryMock->method('getHttp')->with([])->willReturn($httpClientMock);
+        $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
         $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
 
-        return new AnthropicProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        return new AnthropicProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
     }
 
     private function createJsonResponse(array $payload, int $status = 200): HttpResponse

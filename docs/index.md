@@ -1,5 +1,6 @@
 * [Overview](overview.md)
 * [Getting Started](getting-started.md)
-* [Open AI Provider](providers/openai.md)
+* [Features](features.md)
+* [OpenAI Provider](providers/openai.md)
 * [Anthropic Provider](providers/anthropic.md)
 * [Ollama Provider](providers/ollama.md)

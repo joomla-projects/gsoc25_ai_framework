@@ -89,8 +89,8 @@ class ModerationTest extends TestCase
 
     private function createProviderWithResponses(HttpResponse ...$responses): OpenAIProvider
     {
-        $httpFactoryMock = $this->createMock(HttpFactory::class);
-        $httpClientMock = $this->createMock(Http::class);
+        $httpFactoryMock = $this->createStub(HttpFactory::class);
+        $httpClientMock = $this->createStub(Http::class);
 
         $httpFactoryMock->method('getHttp')->willReturn($httpClientMock);
 
@@ -98,7 +98,7 @@ class ModerationTest extends TestCase
             $httpClientMock->method('post')->willReturnOnConsecutiveCalls(...$responses);
         }
 
-        return new OpenAIProvider(['api_key' => 'test-api-key'], $httpFactoryMock);
+        return new OpenAIProvider(['api_key' => 'test-api-key', 'max_retries' => 0], $httpFactoryMock);
     }
 
     private function createJsonResponse(array $payload, int $status = 200): HttpResponse

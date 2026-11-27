@@ -259,7 +259,7 @@ class InvalidArgumentException extends AIException
      * @return  self
      * @since  __DEPLOY_VERSION__
      */
-    public static function invalidParameter(string $parameter, $value, string $provider, string $requirement, array $context = []): self
+    public static function invalidParameter(string $parameter, mixed $value, string $provider, string $requirement, array $context = []): self
     {
         $valueStr = is_scalar($value) ? (string)$value : gettype($value);
         $message = "Parameter '{$parameter}' has invalid value '{$valueStr}'. {$requirement}";
