@@ -36,6 +36,7 @@ class AIFactory
         'openai' => OpenAIProvider::class,
         'anthropic' => AnthropicProvider::class,
         'ollama' => OllamaProvider::class,
+        'gemini' => \Joomla\AI\Provider\GeminiProvider::class,
     ];
 
     /**
