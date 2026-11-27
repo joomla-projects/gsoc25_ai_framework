@@ -107,7 +107,7 @@ class GrokTest extends TestCase
         $provider = new GrokProvider([], $this->routingHttpFactory([]));
 
         $this->expectException(AuthenticationException::class);
-        $this->expectExceptionMessage('xAI API key not configured. Provide the api_key option.');
+        $this->expectExceptionMessage('Grok API key not configured. Provide the api_key option.');
 
         $provider->chat('Hi');
     }

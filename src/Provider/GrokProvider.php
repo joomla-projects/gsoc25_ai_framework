@@ -10,7 +10,6 @@
 namespace Joomla\AI\Provider;
 
 use Joomla\AI\AbstractProvider;
-use Joomla\AI\Exception\AuthenticationException;
 use Joomla\AI\Exception\InvalidArgumentException;
 use Joomla\AI\Exception\ProviderException;
 use Joomla\AI\Interface\ChatInterface;
@@ -21,7 +20,6 @@ use Joomla\AI\Interface\StreamInterface;
 use Joomla\AI\Interface\ToolInterface;
 use Joomla\AI\Response\Response;
 use Joomla\Http\HttpFactory;
-use Joomla\Http\Response as HttpResponse;
 
 /**
  * Grok (xAI) provider implementation.
@@ -132,33 +130,6 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     }
 
     /**
-     * List the models available to the API key.
-     *
-     * @return  array
-     * @since  __DEPLOY_VERSION__
-     */
-    public function getAvailableModels(): array
-    {
-        $response = $this->makeGetRequest($this->baseUrl . '/models', $this->buildHeaders());
-        $data = $this->parseJsonResponse($response->getBody());
-
-        $this->assertResponseFields($data, ['data[]'], (string) $response->getBody());
-
-        return array_column($data['data'], 'id');
-    }
-
-    /**
-     * Get the known chat models.
-     *
-     * @return  array
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getChatModels(): array
-    {
-        return $this->getCapability('models', 'chat', []);
-    }
-
-    /**
      * Get the known image generation models.
      *
      * @return  array
@@ -167,63 +138,6 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     public function getImageModels(): array
     {
         return $this->getCapability('models', 'image', []);
-    }
-
-    /**
-     * Check if a model supports a capability (chat, vision, image).
-     *
-     * @param   string  $model       The model name
-     * @param   string  $capability  The capability
-     *
-     * @return  bool
-     * @since   __DEPLOY_VERSION__
-     */
-    public function isModelCapable(string $model, string $capability): bool
-    {
-        return $this->checkModelCapability($model, $capability, $this->getCapability('models', null, []));
-    }
-
-    /**
-     * Send a message to Grok and return the response.
-     *
-     * Options: model, messages, system, max_tokens, temperature, top_p, stop, frequency_penalty,
-     * presence_penalty, n, seed, tools, tool_choice, parallel_tool_calls, response_schema,
-     * stream, on_chunk. Some reasoning models reject sampling and penalty options.
-     *
-     * @param   string  $message  The message to send
-     * @param   array   $options  Additional options for the request
-     *
-     * @return  Response
-     * @since  __DEPLOY_VERSION__
-     */
-    public function chat(string $message, array $options = []): Response
-    {
-        if (!empty($options['stream'])) {
-            return $this->consumeStream($this->chatStream($message, $options), $options['on_chunk'] ?? null);
-        }
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-
-        return $this->parseChatCompletion((string) $this->postJson($this->getChatEndpoint(), $payload)->getBody());
-    }
-
-    /**
-     * Stream a chat response. Yields text deltas; getReturn() gives the final Response.
-     *
-     * @param   string  $message  The message to send
-     * @param   array   $options  The same options as chat()
-     *
-     * @return  \Generator<int, string, mixed, Response>
-     * @since   __DEPLOY_VERSION__
-     */
-    public function chatStream(string $message, array $options = []): \Generator
-    {
-        $this->assertNoToolsWhenStreaming($options);
-
-        $payload = $this->buildChatRequestPayload($message, $options);
-        $payload['stream'] = true;
-
-        return yield from $this->streamChatCompletion($this->getChatEndpoint(), $payload, $this->buildHeaders());
     }
 
     /**
@@ -241,25 +155,7 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     {
         $this->assertValidImage($image);
 
-        $imageUrl = ['url' => $image];
-
-        if (isset($options['detail'])) {
-            if (!in_array($options['detail'], ['auto', 'low', 'high'], true)) {
-                throw InvalidArgumentException::invalidParameter('detail', $options['detail'], 'grok', 'Detail must be "auto", "low" or "high".');
-            }
-
-            $imageUrl['detail'] = $options['detail'];
-        }
-
-        $options['messages'] = [[
-            'role' => 'user',
-            'content' => [
-                ['type' => 'text', 'text' => $message],
-                ['type' => 'image_url', 'image_url' => $imageUrl],
-            ],
-        ]];
-
-        return $this->chat($message, $options);
+        return $this->chat($message, $this->addVisionMessage($message, $image, $options));
     }
 
     /**
@@ -276,7 +172,7 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     {
         $payload = $this->buildImageRequestPayload($prompt, $options);
 
-        return $this->parseImageResponse((string) $this->postJson($this->getImageEndpoint(), $payload)->getBody(), $payload);
+        return $this->parseImageResponse((string) $this->postJson($this->baseUrl . '/images/generations', $payload)->getBody(), $payload);
     }
 
     /**
@@ -313,6 +209,10 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
     /**
      * Build the chat completions payload.
      *
+     * Options: model, messages, system, max_tokens, temperature, top_p, stop, frequency_penalty,
+     * presence_penalty, n, seed, tools, tool_choice, parallel_tool_calls, response_schema.
+     * Some reasoning models reject sampling and penalty options.
+     *
      * @param   string  $message  The user message
      * @param   array   $options  Request options
      *
@@ -321,20 +221,9 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
      */
     private function buildChatRequestPayload(string $message, array $options): array
     {
-        if (isset($options['messages'])) {
-            if (!is_array($options['messages']) || $options['messages'] === []) {
-                throw InvalidArgumentException::invalidMessages('grok', 'Messages must be a non-empty array.');
-            }
-
-            $this->validateMessages($options['messages']);
-            $messages = $options['messages'];
-        } else {
-            $messages = [['role' => 'user', 'content' => $message]];
-        }
-
         $payload = [
             'model' => $options['model'] ?? $this->defaultModel ?? $this->getOption('model', self::DEFAULT_MODEL),
-            'messages' => $this->prependSystemMessage($messages, $options),
+            'messages' => $this->buildChatMessages($message, $options),
         ];
 
         foreach (['max_tokens' => 'int', 'n' => 'int', 'seed' => 'int', 'temperature' => 'float', 'top_p' => 'float', 'frequency_penalty' => 'float', 'presence_penalty' => 'float'] as $key => $type) {
@@ -409,60 +298,5 @@ class GrokProvider extends AbstractProvider implements ProviderInterface, ChatIn
         }
 
         throw InvalidArgumentException::invalidParameter('image', substr($image, 0, 100), 'grok', 'Image must be an http(s) URL or a JPEG/PNG base64 data URI.');
-    }
-
-    /**
-     * POST a JSON payload with the standard headers.
-     *
-     * @param   string  $endpoint  The endpoint URL
-     * @param   array   $payload   The payload
-     *
-     * @return  HttpResponse
-     * @throws  ProviderException  If the payload cannot be encoded
-     * @since   __DEPLOY_VERSION__
-     */
-    private function postJson(string $endpoint, array $payload): HttpResponse
-    {
-        $json = json_encode($payload);
-
-        if ($json === false) {
-            throw new ProviderException($this->getName(), ['message' => 'Failed to encode request data: ' . json_last_error_msg()]);
-        }
-
-        return $this->makePostRequest($endpoint, $json, $this->buildHeaders());
-    }
-
-    /**
-     * Build the HTTP headers.
-     *
-     * @return  array
-     * @since  __DEPLOY_VERSION__
-     */
-    private function buildHeaders(): array
-    {
-        $apiKey = $this->getOption('api_key');
-
-        if (empty($apiKey)) {
-            throw new AuthenticationException(
-                $this->getName(),
-                ['message' => 'xAI API key not configured. Provide the api_key option.'],
-                401
-            );
-        }
-
-        return [
-            'Authorization' => 'Bearer ' . $apiKey,
-            'Content-Type' => 'application/json',
-        ];
-    }
-
-    private function getChatEndpoint(): string
-    {
-        return $this->baseUrl . '/chat/completions';
-    }
-
-    private function getImageEndpoint(): string
-    {
-        return $this->baseUrl . '/images/generations';
     }
 }
